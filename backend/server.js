@@ -1,6 +1,7 @@
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
+const bcrypt = require('bcrypt'); //criptografar senhas para gerar senha_hash
 
 const app = express();
 app.use(cors());
@@ -13,8 +14,8 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const db = mysql.createConnection({
   host: 'localhost',
   user: 'root',      
-  port: 3307,
-  password: '',      
+  port: 3306,
+  password: '112358',      
   database: 'marketplace'
 });
 
@@ -42,20 +43,36 @@ app.post('/usuario', (req, res) => {
     return res.status(400).json({ mensagem: 'E-mail e senha são obrigatórios.' });
   }
 
-  const query = 'SELECT id_usuario, usuario_nome, email, tipo FROM usuario WHERE email = ? AND senha_hash = ?';
-  db.query(query, [email, senha], (err, results) => {
+  const query = 'SELECT id_usuario, usuario_nome, email, tipo, senha_hash FROM usuario WHERE email = ?';
+  db.query(query, [email], async (err, results) => {
     if (err) {
       console.error('Erro na consulta:', err);
       return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
     }
 
-    if (results.length > 0) {
+    if (results.length === 0) {
+      return res.status(401).json({ mensagem: 'E-mail ou senha incorretos.' });
+    }
+
+    const usuario = results[0];
+
+    try {
+      const senhaCorreta = await bcrypt.compare(senha, usuario.senha_hash);
+
+      if (!senhaCorreta) {
+        return res.status(401).json({ mensagem: 'E-mail ou senha incorretos.' });
+      }
+
+      // Remove o hash antes de devolver o usuário pro front
+      delete usuario.senha_hash;
+
       return res.status(200).json({
         mensagem: 'Login realizado com sucesso!',
-        usuario: results[0]
+        usuario
       });
-    } else {
-      return res.status(401).json({ mensagem: 'E-mail ou senha incorretos.' });
+    } catch (compareError) {
+      console.error('Erro ao comparar senha:', compareError);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
     }
   });
 });
@@ -153,6 +170,47 @@ app.post('/mensagens', (req, res) => {
       return res.status(500).json({ mensagem: 'Erro interno ao salvar mensagem.' });
     }
     res.status(201).json({ mensagem: 'Mensagem salva com sucesso', id: results.insertId });
+  });
+});
+
+app.post('/usuario/cadastro', async (req, res) => {
+  const { usuario_nome, email, senha, tipo } = req.body;
+
+  if (!usuario_nome || !email || !senha || !tipo) {
+    return res.status(400).json({ mensagem: 'Nome, e-mail, senha e tipo são obrigatórios.' });
+  }
+
+  const checkQuery = 'SELECT id_usuario FROM usuario WHERE email = ?';
+  db.query(checkQuery, [email], async (err, results) => {
+    if (err) {
+      console.error('Erro ao verificar e-mail:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+
+    if (results.length > 0) {
+      return res.status(409).json({ mensagem: 'Este e-mail já está cadastrado.' });
+    }
+
+    try {
+      const saltRounds = 10;
+      const senhaHash = await bcrypt.hash(senha, saltRounds);
+
+      const insertQuery = 'INSERT INTO usuario (usuario_nome, email, senha_hash, tipo) VALUES (?, ?, ?, ?)';
+      db.query(insertQuery, [usuario_nome, email, senhaHash, tipo], (err, results) => {
+        if (err) {
+          console.error('Erro ao cadastrar usuário:', err);
+          return res.status(500).json({ mensagem: 'Erro interno ao cadastrar usuário.' });
+        }
+
+        res.status(201).json({
+          mensagem: 'Cadastro realizado com sucesso!',
+          id_usuario: results.insertId
+        });
+      });
+    } catch (hashError) {
+      console.error('Erro ao gerar hash da senha:', hashError);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
   });
 });
 
