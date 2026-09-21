@@ -1,3 +1,5 @@
+## Requisitos Não Funcionais
+
 ## Segurança 
 
 * As senhas dos usuários devem ser obrigatoriamente armazenadas no banco de dados MySQL utilizando algoritmos de hash criptográfico, nunca em texto plano
