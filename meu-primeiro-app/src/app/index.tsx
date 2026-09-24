@@ -137,7 +137,10 @@ const handleLogin = async () => {
             />
           </View>
 
-          <TouchableOpacity style={styles.forgotPasswordButton}>
+          <TouchableOpacity 
+              style={styles.forgotPasswordButton}
+              onPress={() => router.push('/esqueci_senha')}
+>
             <Text style={styles.forgotPasswordText}>Esqueceu a senha?</Text>
           </TouchableOpacity>
 
@@ -158,7 +161,7 @@ const handleLogin = async () => {
           {/* Rodapé / Cadastre-se */}
           <View style={styles.registerContainer}>
             <Text style={styles.registerText}>Ainda não tem uma conta? </Text>
-            <TouchableOpacity>
+            <TouchableOpacity onPress={() => router.push('/cadastro')}>
               <Text style={styles.registerBoldText}>Cadastre-se</Text>
             </TouchableOpacity>
           </View>

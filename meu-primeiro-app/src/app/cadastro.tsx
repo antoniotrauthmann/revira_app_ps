@@ -17,10 +17,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router'; // 👈 Import da navegação do Expo Router
 import { API_BASE_URL } from '../config/api';
 
-// Lista confirmada via: SHOW COLUMNS FROM usuario LIKE 'tipo';
-// enum('catador','cooperativa','industria','empresa','consumidor','admin')
-// ⚠️ "admin" foi propositalmente excluído: esse tipo não deve ser
-// escolhível no cadastro público, apenas atribuído manualmente no banco.
+
 const TIPOS_CONTA = [
   { label: 'Catador', value: 'catador' },
   { label: 'Cooperativa', value: 'cooperativa' },
