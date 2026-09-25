@@ -1,7 +1,9 @@
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
+const crypto = require('crypto'); //já vem instalado
 const bcrypt = require('bcrypt'); //criptografar senhas para gerar senha_hash
+const { enviarCodigoRecuperacao } = require('./email');
 
 const app = express();
 app.use(cors());
@@ -213,6 +215,166 @@ app.post('/usuario/cadastro', async (req, res) => {
     }
   });
 });
+
+
+// --- ROTAS DE RECUPERAÇÃO DE SENHA ---
+ 
+function gerarCodigo() {
+  // código numérico de 6 dígitos, sempre com 6 caracteres (ex: "042817")
+  return String(crypto.randomInt(0, 1000000)).padStart(6, '0');
+}
+ 
+// 1) Usuário informa o e-mail -> geramos e enviamos o código
+app.post('/usuario/esqueci_senha', (req, res) => {
+  const { email } = req.body;
+ 
+  if (!email) {
+    return res.status(400).json({ mensagem: 'E-mail é obrigatório.' });
+  }
+ 
+  const buscaUsuario = 'SELECT id_usuario FROM usuario WHERE email = ?';
+  db.query(buscaUsuario, [email], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar usuário:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+ 
+    // Por segurança, a resposta é a mesma se o e-mail existir ou não,
+    // assim não dá pra descobrir quais e-mails estão cadastrados.
+    if (results.length === 0) {
+      return res.status(200).json({ mensagem: 'Se o e-mail existir, um código foi enviado.' });
+    }
+ 
+    const idUsuario = results[0].id_usuario;
+    const codigo = gerarCodigo();
+    const expiraEm = new Date(Date.now() + 15 * 60 * 1000); // 15 minutos
+ 
+    const insertQuery = 'INSERT INTO codigo_recuperacao (id_usuario, codigo, expira_em) VALUES (?, ?, ?)';
+    db.query(insertQuery, [idUsuario, codigo, expiraEm], async (err) => {
+      if (err) {
+        console.error('Erro ao salvar código de recuperação:', err);
+        return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+      }
+ 
+      try {
+        await enviarCodigoRecuperacao(email, codigo);
+        return res.status(200).json({ mensagem: 'Se o e-mail existir, um código foi enviado.' });
+      } catch (emailError) {
+        console.error('Erro ao enviar e-mail:', emailError);
+        return res.status(500).json({ mensagem: 'Erro ao enviar e-mail de recuperação.' });
+      }
+    });
+  });
+});
+ 
+// 2) Usuário digita o código -> validamos antes de deixar ele trocar a senha
+app.post('/usuario/verificar_codigo', (req, res) => {
+  const { email, codigo } = req.body;
+ 
+  if (!email || !codigo) {
+    return res.status(400).json({ mensagem: 'E-mail e código são obrigatórios.' });
+  }
+ 
+  const query = `
+    SELECT cr.id_codigo, cr.expira_em, cr.usado
+    FROM codigo_recuperacao cr
+    JOIN usuario u ON u.id_usuario = cr.id_usuario
+    WHERE u.email = ? AND cr.codigo = ?
+    ORDER BY cr.id_codigo DESC
+    LIMIT 1
+  `;
+ 
+  db.query(query, [email, codigo], (err, results) => {
+    if (err) {
+      console.error('Erro ao verificar código:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+ 
+    if (results.length === 0) {
+      return res.status(400).json({ mensagem: 'Código inválido.' });
+    }
+ 
+    const registro = results[0];
+ 
+    if (registro.usado) {
+      return res.status(400).json({ mensagem: 'Este código já foi utilizado.' });
+    }
+ 
+    if (new Date(registro.expira_em) < new Date()) {
+      return res.status(400).json({ mensagem: 'Este código expirou. Solicite um novo.' });
+    }
+ 
+    return res.status(200).json({ mensagem: 'Código válido.' });
+  });
+});
+ 
+// 3) Usuário define a nova senha
+app.post('/usuario/redefinir_senha', async (req, res) => {
+  const { email, codigo, novaSenha } = req.body;
+ 
+  if (!email || !codigo || !novaSenha) {
+    return res.status(400).json({ mensagem: 'E-mail, código e nova senha são obrigatórios.' });
+  }
+ 
+  if (novaSenha.length < 6) {
+    return res.status(400).json({ mensagem: 'A senha deve ter pelo menos 6 caracteres.' });
+  }
+ 
+  const query = `
+    SELECT cr.id_codigo, cr.expira_em, cr.usado, u.id_usuario
+    FROM codigo_recuperacao cr
+    JOIN usuario u ON u.id_usuario = cr.id_usuario
+    WHERE u.email = ? AND cr.codigo = ?
+    ORDER BY cr.id_codigo DESC
+    LIMIT 1
+  `;
+ 
+  db.query(query, [email, codigo], async (err, results) => {
+    if (err) {
+      console.error('Erro ao verificar código:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+ 
+    if (results.length === 0) {
+      return res.status(400).json({ mensagem: 'Código inválido.' });
+    }
+ 
+    const registro = results[0];
+ 
+    if (registro.usado) {
+      return res.status(400).json({ mensagem: 'Este código já foi utilizado.' });
+    }
+ 
+    if (new Date(registro.expira_em) < new Date()) {
+      return res.status(400).json({ mensagem: 'Este código expirou. Solicite um novo.' });
+    }
+ 
+    try {
+      const saltRounds = 10;
+      const senhaHash = await bcrypt.hash(novaSenha, saltRounds);
+ 
+      const updateQuery = 'UPDATE usuario SET senha_hash = ? WHERE id_usuario = ?';
+      db.query(updateQuery, [senhaHash, registro.id_usuario], (err) => {
+        if (err) {
+          console.error('Erro ao atualizar senha:', err);
+          return res.status(500).json({ mensagem: 'Erro interno ao atualizar senha.' });
+        }
+ 
+        // marca o código como usado, pra não poder ser reaproveitado
+        const marcaUsado = 'UPDATE codigo_recuperacao SET usado = 1 WHERE id_codigo = ?';
+        db.query(marcaUsado, [registro.id_codigo], (err) => {
+          if (err) console.error('Erro ao marcar código como usado:', err);
+        });
+ 
+        return res.status(200).json({ mensagem: 'Senha redefinida com sucesso!' });
+      });
+    } catch (hashError) {
+      console.error('Erro ao gerar hash da senha:', hashError);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+  });
+});
+
 
 app.listen(3000, '0.0.0.0', () => {
   console.log('Servidor rodando na porta 3000');
