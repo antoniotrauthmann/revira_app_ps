@@ -23,18 +23,15 @@ export default function LoginScreen() {
 
   const router = useRouter(); // 👈 Hook para controlar a navegação
 
-  const API_URL = `${API_BASE_URL}/usuario`;
+  const API_URL = `${API_BASE_URL}/usuario/login`;
 
 const handleLogin = async () => {
-  console.log('Iniciando tentativa de login...'); // Exibido no Console do Navegador (F12)
+  console.log('Iniciando tentativa de login...');
 
   if (!email.trim() || !senha.trim()) {
     const mensagem = 'Por favor, preencha o e-mail e a senha.';
-    if (Platform.OS === 'web') {
-      alert(mensagem);
-    } else {
-      Alert.alert('Atenção', mensagem);
-    }
+    if (Platform.OS === 'web') alert(mensagem);
+    else Alert.alert('Atenção', mensagem);
     return;
   }
 
@@ -52,18 +49,27 @@ const handleLogin = async () => {
       }),
     });
 
-    const data = await response.json();
+    // Obtém o texto bruto da resposta para validação
+    const textResponse = await response.text();
+    let data;
+
+    try {
+      data = JSON.parse(textResponse);
+    } catch (parseError) {
+      console.error('Resposta não-JSON recebida do servidor:', textResponse);
+      throw new Error('O servidor devolveu uma resposta num formato inválido.');
+    }
+
     console.log('Resposta do servidor:', data);
 
     if (response.ok) {
       const usuarioNome = data.usuario?.usuario_nome || 'Usuário';
 
-      // Salva os dados do usuário no AsyncStorage para persistência da sessão
       await AsyncStorage.setItem('@usuario_logado', JSON.stringify(data.usuario));
 
       if (Platform.OS === 'web') {
         alert(`Olá, ${usuarioNome}! Login realizado com sucesso.`);
-        router.replace('/home'); // Navegação direta para Web
+        router.replace('/home');
       } else {
         Alert.alert(
           'Bem-vindo(a)!',
@@ -83,7 +89,7 @@ const handleLogin = async () => {
     }
   } catch (error) {
     console.error('Erro na requisição:', error);
-    const conexaoMsg = 'Não foi possível conectar ao servidor. Verifique se o Node.js está rodando.';
+    const conexaoMsg = 'Não foi possível conectar ao servidor. Verifique a ligação e o IP do backend.';
     if (Platform.OS === 'web') alert(conexaoMsg);
     else Alert.alert('Erro de Conexão', conexaoMsg);
   } finally {
