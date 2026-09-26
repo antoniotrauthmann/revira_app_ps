@@ -23,7 +23,7 @@ export default function NovaSenhaScreen() {
 
   const router = useRouter();
 
-  const mostrarMensagem = (titulo, mensagem) => {
+  const mostrarMensagem = (titulo: string, mensagem: string) => {
     if (Platform.OS === 'web') {
       alert(mensagem);
     } else {

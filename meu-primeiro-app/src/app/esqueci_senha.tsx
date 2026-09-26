@@ -22,7 +22,7 @@ export default function EsqueciSenhaScreen() {
   const router = useRouter();
   const API_URL = `${API_BASE_URL}/usuario/esqueci_senha`;
 
-  const mostrarMensagem = (titulo, mensagem) => {
+  const mostrarMensagem = (titulo: string, mensagem: string) => {
     if (Platform.OS === 'web') {
       alert(mensagem);
     } else {
