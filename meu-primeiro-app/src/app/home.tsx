@@ -47,7 +47,7 @@ export default function HomeScreen() {
  
         {/* Atalhos principais */}
         <View style={styles.menuGrid}>
-          <TouchableOpacity style={styles.card} activeOpacity={0.7}>
+          <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => router.push('/anuncio_listagem')}>
             <MaterialCommunityIcons name="store" size={40} color="#2E7D32" />
             <Text style={styles.cardTitle}>Anúncios</Text>
           </TouchableOpacity>
@@ -65,6 +65,11 @@ export default function HomeScreen() {
           <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => router.push('/profile')}>
             <MaterialCommunityIcons name="account" size={40} color="#2E7D32" />
             <Text style={styles.cardTitle}>Meu Perfil</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => router.push('/anuncio_cadastro')} >
+            <MaterialCommunityIcons name="plus-box" size={40} color="#2E7D32" />
+            <Text style={styles.cardTitle}>Criar Anúncio</Text>
           </TouchableOpacity>
         </View>
  
