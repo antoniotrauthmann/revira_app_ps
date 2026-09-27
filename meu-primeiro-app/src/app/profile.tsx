@@ -267,7 +267,7 @@ export default function ProfileScreen() {
             iconColor="#F9A825"
             label="Minhas Avaliações"
             subtitle="Veja o que dizem sobre você"
-            onPress={() => router.push('/avaliacao')}
+            onPress={() => router.push('/minhas_avaliacoes')} 
           />
         </View>
 

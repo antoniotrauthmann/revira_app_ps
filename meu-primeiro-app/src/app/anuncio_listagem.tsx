@@ -152,6 +152,8 @@ export default function AnunciosScreen() {
             <Text style={styles.sellerName} numberOfLines={1}>
               {item.vendedor_nome}
             </Text>
+            <MaterialCommunityIcons name="star" size={14} color="#F9A825" />
+            <Text style={{fontSize: 12, color: '#F9A825', fontWeight: 'bold', marginRight: 10}}>5.0</Text>
           </View>
 
           <TouchableOpacity

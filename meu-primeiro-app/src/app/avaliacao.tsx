@@ -39,18 +39,26 @@ export default function AvaliacaoScreen() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          id_transacao: 1, // Atenção: este ID deve existir na tabela 'transacao' do banco
-          id_avaliador: 1, // Substituir pelo ID do usuário logado
-          id_avaliado: 2,  // Substituir pelo ID do usuário que está sendo avaliado
+          id_transacao: 1, 
+          id_avaliador: 1, 
+          id_avaliado: 1,  
           nota: nota,
           comentario: comentario,
         }),
       });
 
       if (response.ok) {
-        Alert.alert('Sucesso', 'Avaliação enviada com sucesso!', [
-          { text: 'OK', onPress: () => router.back() } 
-        ]);
+        if (Platform.OS === 'web') {
+          window.alert('Sucesso! A sua avaliação foi enviada com sucesso.');
+          router.push('/anuncio_listagem');
+        } else {
+          Alert.alert('Sucesso!', 'A sua avaliação foi enviada com sucesso.', [
+            { 
+              text: 'OK', 
+              onPress: () => router.push('/anuncio_listagem')
+            }
+          ]);
+        }
       } else {
         const errorData = await response.json();
         throw new Error(errorData.mensagem || 'Falha ao enviar avaliação');
@@ -72,7 +80,7 @@ export default function AvaliacaoScreen() {
             <MaterialCommunityIcons
               name={star <= nota ? "star" : "star-outline"}
               size={48}
-              color={star <= nota ? "#FFD700" : "#C8E6C9"} // Dourado se preenchido, verde claro se vazio
+              color={star <= nota ? "#FFD700" : "#C8E6C9"}
             />
           </TouchableOpacity>
         ))}
@@ -86,7 +94,16 @@ export default function AvaliacaoScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.container}
       >
-        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <TouchableOpacity 
+            style={styles.backButton} 
+            onPress={() => {
+              if (router.canGoBack()) {
+                router.back();
+              } else {
+                router.push('/anuncio_listagem');
+              }
+            }}
+          >
           <MaterialCommunityIcons name="arrow-left" size={24} color="#1B5E20" />
         </TouchableOpacity>
 
