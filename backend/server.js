@@ -547,3 +547,19 @@ app.post('/usuario/redefinir_senha', async (req, res) => {
 app.listen(3000, '0.0.0.0', () => {
   console.log('Servidor rodando na porta 3000');
 });
+
+app.post('/avaliacoes', (req, res) => {
+  // Recebendo o id_transacao do front
+  const { id_transacao, id_avaliador, id_avaliado, nota, comentario } = req.body;
+
+  // Inserindo na tabela avaliacao com todos os campos obrigatórios
+  const query = 'INSERT INTO avaliacao (id_transacao, id_avaliador, id_avaliado, nota, comentario) VALUES (?, ?, ?, ?, ?)';
+  
+  db.query(query, [id_transacao, id_avaliador, id_avaliado, nota, comentario], (err, results) => {
+    if (err) {
+      console.error('Erro ao salvar avaliação:', err);
+      return res.status(500).json({ mensagem: 'Erro ao processar avaliação.' });
+    }
+    res.status(201).json({ mensagem: 'Avaliação salva com sucesso!' });
+  });
+});
