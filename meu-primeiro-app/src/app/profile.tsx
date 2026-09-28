@@ -263,6 +263,14 @@ export default function ProfileScreen() {
           />
           <View style={styles.menuDivider} />
           <MenuItem
+            icon="heart-outline"
+            iconColor="#D32F2F"
+            label="Meus Favoritos"
+            subtitle="Anúncios salvos para depois"
+            onPress={() => router.push('/favoritos')}
+          />
+          <View style={styles.menuDivider} />
+          <MenuItem
             icon="star-outline"
             iconColor="#F9A825"
             label="Minhas Avaliações"

@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config/api';
 
 const { width } = Dimensions.get('window');
@@ -46,6 +47,7 @@ export default function DetalhesAnuncioScreen() {
   const [anuncio, setAnuncio] = useState<DetalheAnuncio | null>(null);
   const [loading, setLoading] = useState(true);
   const [imagemAtiva, setImagemAtiva] = useState(0);
+  const [favoritado, setFavoritado] = useState(false);
 
   const carregarDetalhes = useCallback(async () => {
     if (!idAnuncio) return;
@@ -67,9 +69,61 @@ export default function DetalhesAnuncioScreen() {
     }
   }, [idAnuncio, router]);
 
+  const carregarStatusFavorito = useCallback(async () => {
+    try {
+      const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+      if (!dadosSalvos || !idAnuncio) return;
+
+      const usuario = JSON.parse(dadosSalvos);
+      const response = await fetch(`${API_BASE_URL}/favoritos/${usuario.id_usuario}/${idAnuncio}`);
+
+      if (response.ok) {
+        const data = await response.json();
+        setFavoritado(data.favoritado);
+      }
+    } catch (error) {
+      console.error('Erro ao verificar favorito:', error);
+    }
+  }, [idAnuncio]);
+
+  const toggleFavorito = async () => {
+    try {
+      const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+
+      if (!dadosSalvos) {
+        Alert.alert('Atenção', 'Faça login para salvar favoritos.');
+        return;
+      }
+
+      const usuario = JSON.parse(dadosSalvos);
+      const response = await fetch(`${API_BASE_URL}/favoritos`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id_usuario: usuario.id_usuario,
+          id_anuncio: idAnuncio,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.mensagem || 'Erro ao atualizar favorito');
+      }
+
+      setFavoritado(Boolean(data.favoritado));
+    } catch (error) {
+      console.error('Erro ao atualizar favorito:', error);
+      Alert.alert('Erro', 'Não foi possível atualizar esse anúncio nos favoritos.');
+    }
+  };
+
   useEffect(() => {
     carregarDetalhes();
-  }, [carregarDetalhes]);
+    carregarStatusFavorito();
+  }, [carregarDetalhes, carregarStatusFavorito]);
 
   const getCategoryIcon = (categoria: string) => {
     switch (categoria?.toLowerCase()) {
@@ -114,6 +168,17 @@ export default function DetalhesAnuncioScreen() {
         <Text style={styles.headerTitle} numberOfLines={1}>
           {anuncio.anuncio_titulo}
         </Text>
+        <TouchableOpacity
+          style={[styles.favoriteToggle, favoritado && styles.favoriteToggleActive]}
+          onPress={toggleFavorito}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons
+            name={favoritado ? 'heart' : 'heart-outline'}
+            size={20}
+            color={favoritado ? '#D32F2F' : '#2E7D32'}
+          />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -273,6 +338,17 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, backgroundColor: '#F4F9F4', gap: 12 },
   backButton: { padding: 8, borderRadius: 8, backgroundColor: '#E8F5E9' },
   headerTitle: { flex: 1, fontSize: 18, fontWeight: 'bold', color: '#1B5E20' },
+  favoriteToggle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  favoriteToggleActive: {
+    backgroundColor: '#FDECEC',
+  },
   scrollContent: { paddingBottom: 100 },
   galleryContainer: { width: width, height: 240, backgroundColor: '#E8F5E9', position: 'relative' },
   galleryImage: { width: width, height: 240, resizeMode: 'cover' },
