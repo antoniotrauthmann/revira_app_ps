@@ -290,6 +290,110 @@ app.get('/materiais', (req, res) => {
   });
 });
 
+app.get('/favoritos/:id_usuario', (req, res) => {
+  const { id_usuario } = req.params;
+
+  const query = `
+    SELECT
+      f.id_favorito,
+      f.criado_em AS favorito_em,
+      a.id_anuncio,
+      a.anuncio_titulo,
+      a.descricao,
+      a.quantidade,
+      a.preco,
+      a.status,
+      a.criado_em,
+      m.material_nome,
+      m.categoria,
+      m.unidade_medida,
+      u.id_usuario,
+      u.usuario_nome AS vendedor_nome,
+      (
+        SELECT img.anuncio_caminho_imagem
+        FROM imagens_anuncio img
+        WHERE img.id_anuncio = a.id_anuncio
+        ORDER BY img.ordem ASC LIMIT 1
+      ) AS imagem_capa
+    FROM favorito f
+    INNER JOIN anuncio a ON a.id_anuncio = f.id_anuncio
+    INNER JOIN material m ON m.id_material = a.id_material
+    INNER JOIN usuario u ON u.id_usuario = a.id_usuario
+    WHERE f.id_usuario = ?
+    ORDER BY f.criado_em DESC
+  `;
+
+  db.query(query, [id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar favoritos:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao buscar favoritos.' });
+    }
+
+    res.json(results);
+  });
+});
+
+app.get('/favoritos/:id_usuario/:id_anuncio', (req, res) => {
+  const { id_usuario, id_anuncio } = req.params;
+
+  const query = 'SELECT id_favorito FROM favorito WHERE id_usuario = ? AND id_anuncio = ? LIMIT 1';
+
+  db.query(query, [id_usuario, id_anuncio], (err, results) => {
+    if (err) {
+      console.error('Erro ao verificar favorito:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao verificar favorito.' });
+    }
+
+    res.json({ favoritado: results.length > 0 });
+  });
+});
+
+app.post('/favoritos', (req, res) => {
+  const { id_usuario, id_anuncio } = req.body;
+
+  if (!id_usuario || !id_anuncio) {
+    return res.status(400).json({ mensagem: 'Usuário e anúncio são obrigatórios.' });
+  }
+
+  const checkQuery = 'SELECT id_favorito FROM favorito WHERE id_usuario = ? AND id_anuncio = ? LIMIT 1';
+
+  db.query(checkQuery, [id_usuario, id_anuncio], (err, results) => {
+    if (err) {
+      console.error('Erro ao verificar favorito existente:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao atualizar favorito.' });
+    }
+
+    if (results.length > 0) {
+      const deleteQuery = 'DELETE FROM favorito WHERE id_favorito = ?';
+      return db.query(deleteQuery, [results[0].id_favorito], (deleteErr) => {
+        if (deleteErr) {
+          console.error('Erro ao remover favorito:', deleteErr);
+          return res.status(500).json({ mensagem: 'Erro ao remover favorito.' });
+        }
+
+        return res.status(200).json({
+          mensagem: 'Anúncio removido dos favoritos.',
+          favoritado: false,
+        });
+      });
+    }
+
+    const insertQuery = 'INSERT INTO favorito (id_usuario, id_anuncio) VALUES (?, ?)';
+    db.query(insertQuery, [id_usuario, id_anuncio], (insertErr, insertResults) => {
+      if (insertErr) {
+        console.error('Erro ao salvar favorito:', insertErr);
+        return res.status(500).json({ mensagem: 'Erro ao salvar favorito.' });
+      }
+
+      res.status(201).json({
+        mensagem: 'Anúncio adicionado aos favoritos.',
+        favoritado: true,
+        id_favorito: insertResults.insertId,
+      });
+    });
+  });
+});
+
 app.post('/materiais', (req, res) => {
   const { material_nome, categoria, unidade_medida } = req.body;
 

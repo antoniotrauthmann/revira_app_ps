@@ -270,6 +270,19 @@ CREATE TABLE `usuario` (
   `data_cadastro` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `favorito`
+--
+
+CREATE TABLE `favorito` (
+  `id_favorito` int(11) NOT NULL,
+  `id_usuario` int(11) NOT NULL,
+  `id_anuncio` int(11) NOT NULL,
+  `criado_em` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
 --
 -- Indexes for dumped tables
 --
@@ -397,6 +410,15 @@ ALTER TABLE `usuario`
   ADD UNIQUE KEY `cpf_cnpj` (`cpf_cnpj`);
 
 --
+-- Indexes for table `favorito`
+--
+ALTER TABLE `favorito`
+  ADD PRIMARY KEY (`id_favorito`),
+  ADD UNIQUE KEY `uq_usuario_anuncio` (`id_usuario`, `id_anuncio`),
+  ADD KEY `fk_favorito_usuario` (`id_usuario`),
+  ADD KEY `fk_favorito_anuncio` (`id_anuncio`);
+
+--
 -- AUTO_INCREMENT for dumped tables
 --
 
@@ -495,6 +517,12 @@ ALTER TABLE `transacao`
 --
 ALTER TABLE `usuario`
   MODIFY `id_usuario` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `favorito`
+--
+ALTER TABLE `favorito`
+  MODIFY `id_favorito` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- Constraints for dumped tables
