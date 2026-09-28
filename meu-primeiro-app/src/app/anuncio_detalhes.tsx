@@ -239,6 +239,15 @@ export default function DetalhesAnuncioScreen() {
                 <Text style={styles.sellerType}>{anuncio.vendedor_tipo.toUpperCase()}</Text>
               ) : null}
             </View>
+
+            <TouchableOpacity
+              style={styles.rateButton}
+              onPress={() => router.push('/avaliacao' as any)}
+              activeOpacity={0.7}
+            >
+              <MaterialCommunityIcons name="star" size={22} color="#F9A825" />
+              <Text style={styles.rateButtonText}>Avaliar</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -294,6 +303,8 @@ const styles = StyleSheet.create({
   sellerName: { fontSize: 16, fontWeight: 'bold', color: '#1B241D' },
   sellerLocation: { fontSize: 13, color: '#666', marginTop: 2 },
   sellerType: { fontSize: 11, fontWeight: 'bold', color: '#2E7D32', marginTop: 4 },
+  rateButton: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFDE7', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#F9A825' },
+  rateButtonText: { color: '#F57F17', fontSize: 11, fontWeight: 'bold', marginTop: 2 },
   footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFF', paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#E8F5E9', elevation: 8 },
   chatButton: { backgroundColor: '#2E7D32', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, paddingVertical: 14, borderRadius: 12 },
   chatButtonText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
