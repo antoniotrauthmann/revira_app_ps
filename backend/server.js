@@ -578,6 +578,94 @@ app.post('/usuario/redefinir_senha', async (req, res) => {
   });
 });
 
+// --- ROTAS DE COLETA ---
+
+app.get('/coletas/usuario/:id_usuario', (req, res) => {
+  const { id_usuario } = req.params;
+  const query = `
+    SELECT c.id_coleta, c.data_coleta, c.status, a.anuncio_titulo, a.quantidade,
+      m.material_nome, m.unidade_medida, e.logradouro, e.cidade, e.estado
+    FROM coleta c
+    INNER JOIN transacao t ON c.id_transacao = t.id_transacao
+    INNER JOIN anuncio a ON t.id_anuncio = a.id_anuncio
+    INNER JOIN material m ON a.id_material = m.id_material
+    LEFT JOIN endereco e ON c.id_endereco = e.id_endereco
+    WHERE t.id_comprador = ? OR a.id_usuario = ?
+    ORDER BY c.id_coleta DESC
+  `;
+
+  db.query(query, [id_usuario, id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar coletas:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao buscar coletas.' });
+    }
+    res.json(results);
+  });
+});
+
+app.get('/transacoes/usuario/:id_usuario/disponiveis', (req, res) => {
+  const { id_usuario } = req.params;
+  const query = `
+    SELECT t.id_transacao, a.anuncio_titulo, m.material_nome
+    FROM transacao t
+    INNER JOIN anuncio a ON t.id_anuncio = a.id_anuncio
+    INNER JOIN material m ON a.id_material = m.id_material
+    LEFT JOIN coleta c ON c.id_transacao = t.id_transacao
+    WHERE c.id_coleta IS NULL AND (t.id_comprador = ? OR a.id_usuario = ?)
+    ORDER BY t.id_transacao DESC
+  `;
+
+  db.query(query, [id_usuario, id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar transações:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+    res.json(results);
+  });
+});
+
+app.post('/coletas', (req, res) => {
+  const { id_transacao, id_endereco, data_coleta } = req.body;
+
+  if (!id_transacao || !id_endereco || !data_coleta) {
+    return res.status(400).json({ mensagem: 'Transação, endereço e data são obrigatórios.' });
+  }
+
+  const query = "INSERT INTO coleta (id_transacao, id_endereco, data_coleta, status) VALUES (?, ?, ?, 'agendada')";
+
+  db.query(query, [id_transacao, id_endereco, data_coleta], (err, results) => {
+    if (err) {
+      if (err.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({ mensagem: 'Esta transação já tem uma coleta.' });
+      }
+      console.error('Erro ao agendar coleta:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao agendar coleta.' });
+    }
+    res.status(201).json({ mensagem: 'Coleta agendada com sucesso!', id_coleta: results.insertId });
+  });
+});
+
+app.put('/coletas/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const statusValidos = ['agendada', 'em_andamento', 'concluida', 'cancelada'];
+  if (!statusValidos.includes(status)) {
+    return res.status(400).json({ mensagem: 'Status inválido.' });
+  }
+
+  db.query('UPDATE coleta SET status = ? WHERE id_coleta = ?', [status, id], (err, results) => {
+    if (err) {
+      console.error('Erro ao atualizar coleta:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao atualizar coleta.' });
+    }
+    if (results.affectedRows === 0) {
+      return res.status(404).json({ mensagem: 'Coleta não encontrada.' });
+    }
+    res.json({ mensagem: 'Status atualizado com sucesso!' });
+  });
+});
+
 app.listen(3000, '0.0.0.0', () => {
   console.log('Servidor rodando na porta 3000');
 });

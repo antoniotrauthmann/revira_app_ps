@@ -52,9 +52,9 @@ export default function HomeScreen() {
             <Text style={styles.cardTitle}>Anúncios</Text>
           </TouchableOpacity>
  
-          <TouchableOpacity style={styles.card} activeOpacity={0.7}>
-            <MaterialCommunityIcons name="truck-delivery" size={40} color="#2E7D32" />
-            <Text style={styles.cardTitle}>Coletas</Text>
+          <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => router.push('/coleta')}>
+          <MaterialCommunityIcons name="truck-delivery" size={40} color="#2E7D32" />
+          <Text style={styles.cardTitle}>Coletas</Text>
           </TouchableOpacity>
  
           <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => router.push('/chat')}>
