@@ -1,885 +1,1034 @@
-// import { MaterialCommunityIcons } from '@expo/vector-icons';
-// import { useLocalSearchParams, useRouter } from 'expo-router';
-// import { useCallback, useEffect, useState } from 'react';
-// import {
-//     ActivityIndicator,
-//     Alert,
-//     Image,
-//     SafeAreaView,
-//     ScrollView,
-//     Share,
-//     StyleSheet,
-//     Text,
-//     TouchableOpacity,
-//     useWindowDimensions,
-//     View,
-// } from 'react-native';
-// import { API_BASE_URL } from '../config/api';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Image,
+    SafeAreaView,
+    ScrollView,
+    Share,
+    StyleSheet,
+    Text,
+    TouchableOpacity,
+    useWindowDimensions,
+    View,
+} from 'react-native';
+import { API_BASE_URL } from '../../config/api';
 
-// interface VendedorPerfil {
-//   id_usuario: number;
-//   vendedor_nome: string;
-//   vendedor_email: string;
-//   vendedor_tipo: string;
-//   cidade: string | null;
-//   estado: string | null;
-//   avaliacao_media?: number;
-//   total_avaliacoes?: number;
-//   taxa_resposta?: string;
-//   membro_desde?: string;
-// }
+// Interfaces ajustadas com base nas respostas do backend (server.js)
+interface Vendedor {
+  id_usuario: number;
+  usuario_nome: string;
+  email: string;
+  tipo: string;
+  cpf_cnpj: string | null;
+  data_cadastro: string;
+}
 
-// interface AnuncioItem {
-//   id_anuncio: number;
-//   anuncio_titulo: string;
-//   preco: number;
-//   quantidade: number;
-//   unidade_medida: string;
-//   categoria: string;
-//   material_nome: string;
-//   status: string;
-//   imagens: string[];
-// }
+interface Endereco {
+  id_endereco: number;
+  id_usuario: number;
+  logradouro: string | null;
+  cidade: string;
+  estado: string;
+  cep: string | null;
+}
 
-// export default function PerfilVendedorScreen() {
-//   const router = useRouter();
-//   const params = useLocalSearchParams();
-//   const idVendedor = params.id;
+interface Avaliacao {
+  id_avaliacao: number;
+  id_transacao: number;
+  id_avaliador: number;
+  id_avaliado: number;
+  nota: number;
+  comentario: string;
+  avaliador_nome: string;
+}
 
-//   const { width } = useWindowDimensions();
-//   const isDesktop = width >= 768; // Breakpoint de layout Desktop / Web
+interface Anuncio {
+  id_anuncio: number;
+  anuncio_titulo: string;
+  descricao: string | null;
+  quantidade: number;
+  preco: number;
+  status: string;
+  criado_em: string;
+  material_nome: string;
+  categoria: string;
+  unidade_medida: string;
+  id_usuario: number;
+  vendedor_nome: string;
+  imagem_capa: string | null;
+}
 
-//   const [vendedor, setVendedor] = useState<VendedorPerfil | null>(null);
-//   const [anuncios, setAnuncios] = useState<AnuncioItem[]>([]);
-//   const [loading, setLoading] = useState(true);
-//   const [isFavorito, setIsFavorito] = useState(false);
+export default function PerfilVendedorScreen() {
+  const router = useRouter();
+  const params = useLocalSearchParams();
+  const idVendedor = params.id;
 
-//   // Busca os dados do perfil do vendedor e a lista de anúncios cadastrados por ele
-//   const carregarDadosVendedor = useCallback(async () => {
-//     if (!idVendedor) return;
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 768; // Layout adaptativo para telas grandes
 
-//     try {
-//       setLoading(true);
-//       // Requisição do perfil do vendedor
-//       const resVendedor = await fetch(`${API_BASE_URL}/usuarios/${idVendedor}`);
-      
-//       if (resVendedor.ok) {
-//         const dataVendedor = await resVendedor.json();
-//         setVendedor(dataVendedor);
-//       } else {
-//         // Fallback genérico caso a API retorne vendedor atrelado aos anúncios
-//         setVendedor({
-//           id_usuario: Number(idVendedor),
-//           vendedor_nome: 'Vendedor Parceiro',
-//           vendedor_email: 'contato@revirapp.com.br',
-//           vendedor_tipo: 'Cooperativa Recicladora',
-//           cidade: 'São Paulo',
-//           estado: 'SP',
-//           avaliacao_media: 4.9,
-//           total_avaliacoes: 28,
-//           taxa_resposta: '98%',
-//           membro_desde: '2023',
-//         });
-//       }
+  const [vendedor, setVendedor] = useState<Vendedor | null>(null);
+  const [endereco, setEndereco] = useState<Endereco | null>(null);
+  const [avaliacoes, setAvaliacoes] = useState<Avaliacao[]>([]);
+  const [anuncios, setAnuncios] = useState<Anuncio[]>([]);
+  
+  const [loading, setLoading] = useState(true);
+  const [isFavorito, setIsFavorito] = useState(false);
+  const [abaAtiva, setAbaAtiva] = useState<'anuncios' | 'avaliacoes'>('anuncios');
 
-//       // Requisição dos anúncios do vendedor
-//       const resAnuncios = await fetch(`${API_BASE_URL}/anuncios?id_usuario=${idVendedor}`);
-//       if (resAnuncios.ok) {
-//         const dataAnuncios = await resAnuncios.json();
-//         setAnuncios(Array.isArray(dataAnuncios) ? dataAnuncios : []);
-//       }
-//     } catch (error) {
-//       console.error('Erro ao buscar dados do vendedor:', error);
-//       Alert.alert('Erro', 'Não foi possível carregar as informações do vendedor.');
-//     } finally {
-//       setLoading(false);
-//     }
-//   }, [idVendedor]);
+  // Buscar todos os dados nos endpoints do Node.js
+  const carregarPerfil = useCallback(async () => {
+    if (!idVendedor) return;
 
-//   useEffect(() => {
-//     carregarDadosVendedor();
-//   }, [carregarDadosVendedor]);
+    try {
+      setLoading(true);
 
-//   const handleCompartilhar = async () => {
-//     try {
-//       if (vendedor) {
-//         await Share.share({
-//           message: `Confira o perfil de ${vendedor.vendedor_nome} no Revirapp - Marketplace Sustentável!`,
-//         });
-//       }
-//     } catch (error) {
-//       console.error('Erro ao compartilhar perfil:', error);
-//     }
-//   };
+      const [resUsuario, resEndereco, resAvaliacoes, resAnuncios] = await Promise.all([
+        fetch(`${API_BASE_URL}/usuario/${idVendedor}`),
+        fetch(`${API_BASE_URL}/endereco/usuario/${idVendedor}`),
+        fetch(`${API_BASE_URL}/usuarios/${idVendedor}/avaliacoes`),
+        fetch(`${API_BASE_URL}/anuncios`),
+      ]);
 
-//   const getCategoryIcon = (categoria: string) => {
-//     switch (categoria?.toLowerCase()) {
-//       case 'papel':
-//       case 'papelão':
-//         return 'file-document-outline';
-//       case 'plástico':
-//       case 'plastico':
-//         return 'bottle-soda-outline';
-//       case 'vidro':
-//         return 'glass-fragile';
-//       case 'metal':
-//         return 'cog-outline';
-//       case 'eletrônicos':
-//       case 'eletronicos':
-//         return 'power-plug-outline';
-//       default:
-//         return 'recycle';
-//     }
-//   };
+      if (resUsuario.ok) {
+        const dataUsuario = await resUsuario.json();
+        setVendedor(dataUsuario);
+      } else {
+        Alert.alert('Erro', 'Vendedor não encontrado.');
+        router.back();
+        return;
+      }
 
-//   if (loading) {
-//     return (
-//       <SafeAreaView style={styles.loadingContainer}>
-//         <ActivityIndicator size="large" color="#16A34A" />
-//         <Text style={styles.loadingText}>Carregando perfil sustentável...</Text>
-//       </SafeAreaView>
-//     );
-//   }
+      if (resEndereco.ok) {
+        const dataEndereco = await resEndereco.json();
+        if (Array.isArray(dataEndereco) && dataEndereco.length > 0) {
+          setEndereco(dataEndereco[0]);
+        }
+      }
 
-//   if (!vendedor) return null;
+      if (resAvaliacoes.ok) {
+        const dataAvaliacoes = await resAvaliacoes.json();
+        setAvaliacoes(Array.isArray(dataAvaliacoes) ? dataAvaliacoes : []);
+      }
 
-//   return (
-//     <SafeAreaView style={styles.container}>
-//       {/* Header Superior da Tela */}
-//       <View style={styles.header}>
-//         <View style={styles.headerLeft}>
-//           <TouchableOpacity
-//             style={styles.iconButton}
-//             onPress={() => router.back()}
-//             activeOpacity={0.7}
-//           >
-//             <MaterialCommunityIcons name="arrow-left" size={22} color="#1E293B" />
-//           </TouchableOpacity>
-//           <Text style={styles.headerTitle} numberOfLines={1}>
-//             Perfil do Vendedor
-//           </Text>
-//         </View>
+      if (resAnuncios.ok) {
+        const dataAnuncios: Anuncio[] = await resAnuncios.json();
+        // Filtra os anúncios pertencentes a este id_usuario
+        const anunciosDoVendedor = dataAnuncios.filter(
+          (item) => String(item.id_usuario) === String(idVendedor)
+        );
+        setAnuncios(anunciosDoVendedor);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar dados do vendedor:', error);
+      Alert.alert('Erro', 'Não foi possível conectar ao servidor.');
+    } finally {
+      setLoading(false);
+    }
+  }, [idVendedor, router]);
 
-//         <View style={styles.headerRight}>
-//           <TouchableOpacity
-//             style={styles.iconButton}
-//             onPress={handleCompartilhar}
-//             activeOpacity={0.7}
-//           >
-//             <MaterialCommunityIcons name="share-variant-outline" size={20} color="#1E293B" />
-//           </TouchableOpacity>
+  useEffect(() => {
+    carregarPerfil();
+  }, [carregarPerfil]);
 
-//           <TouchableOpacity
-//             style={styles.iconButton}
-//             onPress={() => setIsFavorito(!isFavorito)}
-//             activeOpacity={0.7}
-//           >
-//             <MaterialCommunityIcons
-//               name={isFavorito ? 'heart' : 'heart-outline'}
-//               size={22}
-//               color={isFavorito ? '#DC2626' : '#1E293B'}
-//             />
-//           </TouchableOpacity>
-//         </View>
-//       </View>
+  const getCategoryIcon = (categoria: string) => {
+    switch (categoria?.toLowerCase()) {
+      case 'papel':
+      case 'papelão':
+        return 'file-document-outline';
+      case 'plástico':
+      case 'plastico':
+        return 'bottle-soda-outline';
+      case 'vidro':
+        return 'glass-fragile';
+      case 'metal':
+        return 'cog-outline';
+      case 'eletrônicos':
+      case 'eletronicos':
+        return 'power-plug-outline';
+      default:
+        return 'recycle';
+    }
+  };
 
-//       <ScrollView
-//         contentContainerStyle={[
-//           styles.scrollContent,
-//           isDesktop && styles.scrollContentDesktop,
-//         ]}
-//         showsVerticalScrollIndicator={false}
-//       >
-//         <View style={[styles.mainLayout, isDesktop && styles.mainLayoutDesktop]}>
+  const formatarDataCadastro = (dataIso?: string) => {
+    if (!dataIso) return 'Data não informada';
+    const data = new Date(dataIso);
+    const mes = data.toLocaleDateString('pt-BR', { month: 'short' });
+    const ano = data.getFullYear();
+    return `Membro desde ${mes.charAt(0).toUpperCase() + mes.slice(1)} de ${ano}`;
+  };
+
+  const mediaNotas = avaliacoes.length > 0
+    ? (avaliacoes.reduce((acc, curr) => acc + Number(curr.nota), 0) / avaliacoes.length).toFixed(1)
+    : '5.0';
+
+  const handleCompartilhar = async () => {
+    try {
+      if (vendedor) {
+        await Share.share({
+          message: `Confira os produtos e insumos recicláveis de ${vendedor.usuario_nome} no Revirapp!`,
+        });
+      }
+    } catch (error) {
+      console.error('Erro ao compartilhar perfil:', error);
+    }
+  };
+
+  const renderEstrelas = (nota: number) => {
+    return (
+      <View style={styles.starsRow}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <MaterialCommunityIcons
+            key={star}
+            name={star <= nota ? 'star' : 'star-outline'}
+            size={16}
+            color="#D97706"
+          />
+        ))}
+      </View>
+    );
+  };
+
+  if (loading) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#16A34A" />
+        <Text style={styles.loadingText}>Carregando perfil do vendedor...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (!vendedor) return null;
+
+  return (
+    <SafeAreaView style={styles.container}>
+      {/* Header Superior */}
+      <View style={styles.header}>
+        <TouchableOpacity style={styles.iconButton} onPress={() => router.back()} activeOpacity={0.7}>
+          <MaterialCommunityIcons name="arrow-left" size={22} color="#1E293B" />
+        </TouchableOpacity>
+
+        <Text style={styles.headerTitle} numberOfLines={1}>
+          Perfil do Vendedor
+        </Text>
+
+        <View style={styles.headerRightActions}>
+          <TouchableOpacity style={styles.iconButton} onPress={handleCompartilhar} activeOpacity={0.7}>
+            <MaterialCommunityIcons name="share-variant-outline" size={20} color="#1E293B" />
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.iconButton} onPress={() => setIsFavorito(!isFavorito)} activeOpacity={0.7}>
+            <MaterialCommunityIcons
+              name={isFavorito ? 'heart' : 'heart-outline'}
+              size={22}
+              color={isFavorito ? '#DC2626' : '#1E293B'}
+            />
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <ScrollView
+        contentContainerStyle={[styles.scrollContent, isDesktop && styles.scrollContentDesktop]}
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={[styles.mainLayout, isDesktop && styles.mainLayoutDesktop]}>
           
-//           {/* PAINEL DO VENDEDOR (SIDEBAR DESKTOP / TOPO MOBILE) */}
-//           <View style={[styles.sidebar, isDesktop && styles.sidebarDesktop]}>
+          {/* PAINEL ESQUERDO / SIDEBAR (BIO & CARDS DE INFORMAÇÃO) */}
+          <View style={[styles.sidebarPanel, isDesktop && styles.sidebarPanelDesktop]}>
             
-//             {/* Card Principal de Identidade */}
-//             <View style={styles.profileCard}>
-//               <View style={styles.avatarContainer}>
-//                 <View style={styles.avatarWrapper}>
-//                   <MaterialCommunityIcons name="account" size={54} color="#15803D" />
-//                 </View>
+            {/* Header com Banner e Avatar */}
+            <View style={styles.profileCard}>
+              <View style={styles.bannerHeader}>
+                <View style={styles.avatarWrapper}>
+                  <View style={styles.avatarCircle}>
+                    <MaterialCommunityIcons name="account" size={48} color="#15803D" />
+                  </View>
+                  <View style={styles.verifiedIcon}>
+                    <MaterialCommunityIcons name="check-decagram" size={20} color="#16A34A" />
+                  </View>
+                </View>
+              </View>
 
-//                 <View style={styles.verificationBadge}>
-//                   <MaterialCommunityIcons name="check-decagram" size={22} color="#16A34A" />
-//                 </View>
-//               </View>
+              <View style={styles.profileBody}>
+                <Text style={styles.vendedorNome}>{vendedor.usuario_nome}</Text>
+                
+                <View style={styles.typeBadge}>
+                  <MaterialCommunityIcons name="leaf" size={14} color="#15803D" />
+                  <Text style={styles.typeBadgeText}>
+                    {vendedor.tipo ? vendedor.tipo.toUpperCase() : 'PARCEIRO RECIRCULAR'}
+                  </Text>
+                </View>
 
-//               <Text style={styles.vendedorName}>{vendedor.vendedor_nome}</Text>
+                <View style={styles.locationRow}>
+                  <MaterialCommunityIcons name="map-marker-outline" size={16} color="#64748B" />
+                  <Text style={styles.locationText}>
+                    {endereco?.cidade && endereco?.estado
+                      ? `${endereco.cidade} - ${endereco.estado}`
+                      : 'Localização não cadastrada'}
+                  </Text>
+                </View>
 
-//               {vendedor.vendedor_tipo && (
-//                 <View style={styles.vendedorTypeBadge}>
-//                   <MaterialCommunityIcons name="leaf" size={14} color="#15803D" />
-//                   <Text style={styles.vendedorTypeText}>
-//                     {vendedor.vendedor_tipo.toUpperCase()}
-//                   </Text>
-//                 </View>
-//               )}
+                <Text style={styles.dataCadastroText}>
+                  {formatarDataCadastro(vendedor.data_cadastro)}
+                </Text>
 
-//               <View style={styles.locationContainer}>
-//                 <MaterialCommunityIcons name="map-marker-outline" size={16} color="#64748B" />
-//                 <Text style={styles.locationText}>
-//                   {vendedor.cidade && vendedor.estado
-//                     ? `${vendedor.cidade} - ${vendedor.estado}`
-//                     : 'Localização não informada'}
-//                 </Text>
-//               </View>
+                {/* Métricas e Reputação */}
+                <View style={styles.metricsGrid}>
+                  <View style={styles.metricItem}>
+                    <View style={styles.ratingBox}>
+                      <MaterialCommunityIcons name="star" size={18} color="#D97706" />
+                      <Text style={styles.ratingScoreText}>{mediaNotas}</Text>
+                    </View>
+                    <Text style={styles.metricLabel}>{avaliacoes.length} avaliações</Text>
+                  </View>
 
-//               <View style={styles.emailContainer}>
-//                 <MaterialCommunityIcons name="email-outline" size={16} color="#64748B" />
-//                 <Text style={styles.emailText}>{vendedor.vendedor_email}</Text>
-//               </View>
+                  <View style={styles.metricDivider} />
 
-//               {/* Avaliação e Reputação */}
-//               <View style={styles.ratingCard}>
-//                 <View style={styles.ratingRow}>
-//                   <MaterialCommunityIcons name="star" size={22} color="#D97706" />
-//                   <Text style={styles.ratingValue}>
-//                     {vendedor.avaliacao_media ? vendedor.avaliacao_media.toFixed(1) : '5.0'}
-//                   </Text>
-//                   <Text style={styles.ratingCount}>
-//                     ({vendedor.total_avaliacoes || 12} avaliações)
-//                   </Text>
-//                 </View>
+                  <View style={styles.metricItem}>
+                    <Text style={styles.metricValueText}>{anuncios.length}</Text>
+                    <Text style={styles.metricLabel}>Lotes ativos</Text>
+                  </View>
+                </View>
+              </View>
+            </View>
 
-//                 <TouchableOpacity
-//                   style={styles.rateActionButton}
-//                   onPress={() => router.push('/avaliacao' as any)}
-//                   activeOpacity={0.7}
-//                 >
-//                   <Text style={styles.rateActionButtonText}>Avaliar Vendedor</Text>
-//                 </TouchableOpacity>
-//               </View>
+            {/* Card de Selos e Segurança */}
+            <View style={styles.securityCard}>
+              <View style={styles.securityItem}>
+                <MaterialCommunityIcons name="shield-check-outline" size={20} color="#16A34A" />
+                <View style={styles.securityTextGroup}>
+                  <Text style={styles.securityTitle}>Vendedor Verificado</Text>
+                  <Text style={styles.securityDesc}>
+                    Identidade e dados cadastrais auditados pela equipe Revirapp.
+                  </Text>
+                </View>
+              </View>
 
-//               {/* Botão de Chat para Desktop no Painel Fixo */}
-//               {isDesktop && (
-//                 <TouchableOpacity
-//                   style={styles.chatButtonPrimary}
-//                   onPress={() => router.push('/chat')}
-//                   activeOpacity={0.85}
-//                 >
-//                   <MaterialCommunityIcons name="message-text-outline" size={20} color="#FFF" />
-//                   <Text style={styles.chatButtonText}>Conversar com o Vendedor</Text>
-//                 </TouchableOpacity>
-//               )}
-//             </View>
+              <View style={styles.securityItem}>
+                <MaterialCommunityIcons name="email-outline" size={20} color="#16A34A" />
+                <View style={styles.securityTextGroup}>
+                  <Text style={styles.securityTitle}>E-mail Confirmado</Text>
+                  <Text style={styles.securityDesc}>{vendedor.email}</Text>
+                </View>
+              </View>
+            </View>
 
-//             {/* Card de Métricas do Vendedor */}
-//             <View style={styles.statsCard}>
-//               <Text style={styles.statsCardTitle}>Estatísticas da Conta</Text>
+            {/* Ações Principais no Desktop */}
+            {isDesktop && (
+              <View style={styles.desktopActionsBox}>
+                <TouchableOpacity
+                  style={styles.btnPrimaryChat}
+                  onPress={() => router.push('/chat')}
+                  activeOpacity={0.85}
+                >
+                  <MaterialCommunityIcons name="message-text-outline" size={20} color="#FFF" />
+                  <Text style={styles.btnPrimaryChatText}>Conversar no Chat</Text>
+                </TouchableOpacity>
 
-//               <View style={styles.statsGrid}>
-//                 <View style={styles.statBox}>
-//                   <Text style={styles.statNumber}>
-//                     {vendedor.taxa_resposta || '98%'}
-//                   </Text>
-//                   <Text style={styles.statLabel}>Taxa de Resposta</Text>
-//                 </View>
+                <TouchableOpacity
+                  style={styles.btnSecondaryAvaliar}
+                  onPress={() => router.push('/avaliacao' as any)}
+                  activeOpacity={0.8}
+                >
+                  <MaterialCommunityIcons name="star-outline" size={20} color="#D97706" />
+                  <Text style={styles.btnSecondaryAvaliarText}>Avaliar Vendedor</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
 
-//                 <View style={styles.statBox}>
-//                   <Text style={styles.statNumber}>{anuncios.length}</Text>
-//                   <Text style={styles.statLabel}>Lotes Ativos</Text>
-//                 </View>
-
-//                 <View style={styles.statBox}>
-//                   <Text style={styles.statNumber}>
-//                     {vendedor.membro_desde || '2023'}
-//                   </Text>
-//                   <Text style={styles.statLabel}>Membro Desde</Text>
-//                 </View>
-
-//                 <View style={styles.statBox}>
-//                   <Text style={[styles.statNumber, { color: '#16A34A' }]}>100%</Text>
-//                   <Text style={styles.statLabel}>Entrega Segura</Text>
-//                 </View>
-//               </View>
-//             </View>
-
-//           </View>
-
-//           {/* CONTEÚDO PRINCIPAL (ANÚNCIOS DO VENDEDOR) */}
-//           <View style={[styles.contentArea, isDesktop && styles.contentAreaDesktop]}>
+          {/* COLUNA DIREITA / CONTEÚDO PRINCIPAL (ANÚNCIOS E AVALIAÇÕES) */}
+          <View style={[styles.mainContentPanel, isDesktop && styles.mainContentPanelDesktop]}>
             
-//             {/* Banner de Impacto Sustentável do Vendedor */}
-//             <View style={styles.ecoBanner}>
-//               <View style={styles.ecoBannerIcon}>
-//                 <MaterialCommunityIcons name="recycle" size={28} color="#15803D" />
-//               </View>
-//               <View style={styles.ecoBannerContent}>
-//                 <Text style={styles.ecoBannerTitle}>Vendedor Parceiro Circular</Text>
-//                 <Text style={styles.ecoBannerDesc}>
-//                   Este perfil comercializa materiais recicláveis e reaproveitados auditados, reduzindo o impacto ambiental.
-//                 </Text>
-//               </View>
-//             </View>
+            {/* Abas para Navegação Mobile */}
+            {!isDesktop && (
+              <View style={styles.mobileTabsContainer}>
+                <TouchableOpacity
+                  style={[styles.tabButton, abaAtiva === 'anuncios' && styles.tabButtonActive]}
+                  onPress={() => setAbaAtiva('anuncios')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.tabButtonText, abaAtiva === 'anuncios' && styles.tabButtonTextActive]}>
+                    Lotes à Venda ({anuncios.length})
+                  </Text>
+                </TouchableOpacity>
 
-//             {/* Cabeçalho da Seção de Produtos */}
-//             <View style={styles.sectionHeader}>
-//               <View style={styles.sectionTitleGroup}>
-//                 <MaterialCommunityIcons name="package-variant-closed" size={22} color="#16A34A" />
-//                 <Text style={styles.sectionTitle}>Lotes Cadastrados</Text>
-//                 <View style={styles.badgeCounter}>
-//                   <Text style={styles.badgeCounterText}>{anuncios.length}</Text>
-//                 </View>
-//               </View>
-//             </View>
+                <TouchableOpacity
+                  style={[styles.tabButton, abaAtiva === 'avaliacoes' && styles.tabButtonActive]}
+                  onPress={() => setAbaAtiva('avaliacoes')}
+                  activeOpacity={0.7}
+                >
+                  <Text style={[styles.tabButtonText, abaAtiva === 'avaliacoes' && styles.tabButtonTextActive]}>
+                    Avaliações ({avaliacoes.length})
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )}
 
-//             {/* Grid ou Lista de Anúncios */}
-//             {anuncios.length > 0 ? (
-//               <View style={[styles.anunciosGrid, isDesktop && styles.anunciosGridDesktop]}>
-//                 {anuncios.map((item) => (
-//                   <TouchableOpacity
-//                     key={item.id_anuncio}
-//                     style={[styles.anuncioCard, isDesktop && styles.anuncioCardDesktop]}
-//                     onPress={() => router.push(`/anuncio_detalhes?id=${item.id_anuncio}` as any)}
-//                     activeOpacity={0.8}
-//                   >
-//                     <View style={styles.anuncioImageWrapper}>
-//                       {item.imagens && item.imagens.length > 0 ? (
-//                         <Image source={{ uri: item.imagens[0] }} style={styles.anuncioImage} />
-//                       ) : (
-//                         <View style={styles.anuncioPlaceholder}>
-//                           <MaterialCommunityIcons
-//                             name={getCategoryIcon(item.categoria)}
-//                             size={40}
-//                             color="#16A34A"
-//                           />
-//                         </View>
-//                       )}
+            {/* SEÇÃO 1: VITRINE DE ANÚNCIOS DO VENDEDOR */}
+            {(isDesktop || abaAtiva === 'anuncios') && (
+              <View style={styles.sectionBlock}>
+                <View style={styles.sectionHeader}>
+                  <MaterialCommunityIcons name="store-outline" size={22} color="#16A34A" />
+                  <Text style={styles.sectionTitle}>Anúncios Ativos ({anuncios.length})</Text>
+                </View>
 
-//                       <View style={styles.anuncioCategoryBadge}>
-//                         <Text style={styles.anuncioCategoryText}>{item.categoria}</Text>
-//                       </View>
-//                     </View>
+                {anuncios.length > 0 ? (
+                  <View style={styles.anunciosGrid}>
+                    {anuncios.map((item) => (
+                      <TouchableOpacity
+                        key={item.id_anuncio}
+                        style={[styles.anuncioCard, isDesktop && styles.anuncioCardDesktop]}
+                        onPress={() => router.push(`/detalhes?id=${item.id_anuncio}` as any)}
+                        activeOpacity={0.85}
+                      >
+                        <View style={styles.anuncioImageContainer}>
+                          {item.imagem_capa ? (
+                            <Image source={{ uri: item.imagem_capa }} style={styles.anuncioImage} resizeMode="cover" />
+                          ) : (
+                            <View style={styles.anuncioPlaceholder}>
+                              <MaterialCommunityIcons name={getCategoryIcon(item.categoria)} size={44} color="#16A34A" />
+                            </View>
+                          )}
 
-//                     <View style={styles.anuncioBody}>
-//                       <Text style={styles.anuncioTitle} numberOfLines={2}>
-//                         {item.anuncio_titulo}
-//                       </Text>
+                          <View style={styles.categoryBadge}>
+                            <Text style={styles.categoryBadgeText}>{item.categoria}</Text>
+                          </View>
+                        </View>
 
-//                       <View style={styles.anuncioQuantityRow}>
-//                         <MaterialCommunityIcons name="scale-balance" size={14} color="#64748B" />
-//                         <Text style={styles.anuncioQuantityText}>
-//                           {Number(item.quantidade)} {item.unidade_medida}
-//                         </Text>
-//                       </View>
+                        <View style={styles.anuncioContent}>
+                          <Text style={styles.anuncioTitulo} numberOfLines={2}>
+                            {item.anuncio_titulo}
+                          </Text>
 
-//                       <View style={styles.anuncioFooter}>
-//                         <View>
-//                           <Text style={styles.anuncioPriceLabel}>Valor do lote</Text>
-//                           <Text style={styles.anuncioPriceValue}>
-//                             R$ {Number(item.preco).toFixed(2).replace('.', ',')}
-//                           </Text>
-//                         </View>
+                          <View style={styles.anuncioPriceRow}>
+                            <View>
+                              <Text style={styles.priceLabel}>Preço do Lote</Text>
+                              <Text style={styles.priceValue}>
+                                R$ {Number(item.preco).toFixed(2).replace('.', ',')}
+                              </Text>
+                            </View>
 
-//                         <View style={styles.anuncioArrowBtn}>
-//                           <MaterialCommunityIcons name="chevron-right" size={20} color="#16A34A" />
-//                         </View>
-//                       </View>
-//                     </View>
-//                   </TouchableOpacity>
-//                 ))}
-//               </View>
-//             ) : (
-//               <View style={styles.emptyContainer}>
-//                 <MaterialCommunityIcons name="package-variant-remove" size={60} color="#CBD5E1" />
-//                 <Text style={styles.emptyTitle}>Nenhum lote ativo no momento</Text>
-//                 <Text style={styles.emptyDesc}>
-//                   Este vendedor não possui materiais cadastrados disponíveis atualmente.
-//                 </Text>
-//               </View>
-//             )}
+                            <View style={styles.quantityTag}>
+                              <MaterialCommunityIcons name="scale-balance" size={14} color="#15803D" />
+                              <Text style={styles.quantityTagText}>
+                                {item.quantidade} {item.unidade_medida}
+                              </Text>
+                            </View>
+                          </View>
+                        </View>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={styles.emptyCard}>
+                    <MaterialCommunityIcons name="recycle-variant" size={54} color="#94A3B8" />
+                    <Text style={styles.emptyTitle}>Nenhum anúncio ativo</Text>
+                    <Text style={styles.emptyText}>
+                      Este vendedor não possui lotes cadastrados no momento.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
 
-//           </View>
-//         </View>
-//       </ScrollView>
+            {/* SEÇÃO 2: AVALIAÇÕES E REPUTAÇÃO DO VENDEDOR */}
+            {(isDesktop || abaAtiva === 'avaliacoes') && (
+              <View style={[styles.sectionBlock, isDesktop && { marginTop: 24 }]}>
+                <View style={styles.sectionHeaderBetween}>
+                  <View style={styles.sectionHeaderLeft}>
+                    <MaterialCommunityIcons name="star-face" size={22} color="#16A34A" />
+                    <Text style={styles.sectionTitle}>Avaliações dos Compradores ({avaliacoes.length})</Text>
+                  </View>
 
-//       {/* Footer Fixo Mobile */}
-//       {!isDesktop && (
-//         <View style={styles.footerMobile}>
-//           <TouchableOpacity
-//             style={styles.chatButtonPrimary}
-//             onPress={() => router.push('/chat')}
-//             activeOpacity={0.85}
-//           >
-//             <MaterialCommunityIcons name="message-text-outline" size={22} color="#FFF" />
-//             <Text style={styles.chatButtonText}>Conversar com o Vendedor</Text>
-//           </TouchableOpacity>
-//         </View>
-//       )}
-//     </SafeAreaView>
-//   );
-// }
+                  <TouchableOpacity
+                    style={styles.addReviewBtn}
+                    onPress={() => router.push('/avaliacao' as any)}
+                    activeOpacity={0.7}
+                  >
+                    <MaterialCommunityIcons name="plus" size={16} color="#15803D" />
+                    <Text style={styles.addReviewBtnText}>Avaliar</Text>
+                  </TouchableOpacity>
+                </View>
 
-// const styles = StyleSheet.create({
-//   container: {
-//     flex: 1,
-//     backgroundColor: '#F8FAFC',
-//   },
-//   loadingContainer: {
-//     flex: 1,
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//     backgroundColor: '#F8FAFC',
-//   },
-//   loadingText: {
-//     marginTop: 16,
-//     color: '#64748B',
-//     fontSize: 15,
-//     fontWeight: '500',
-//   },
+                {avaliacoes.length > 0 ? (
+                  <View style={styles.avaliacoesList}>
+                    {avaliacoes.map((item, index) => (
+                      <View key={item.id_avaliacao || index} style={styles.avaliacaoCard}>
+                        <View style={styles.avaliacaoHeader}>
+                          <View style={styles.avaliadorAvatar}>
+                            <MaterialCommunityIcons name="account" size={20} color="#15803D" />
+                          </View>
+                          <View style={styles.avaliadorInfo}>
+                            <Text style={styles.avaliadorNome}>{item.avaliador_nome || 'Comprador Reciclador'}</Text>
+                            {renderEstrelas(item.nota)}
+                          </View>
+                        </View>
 
-//   /* Header Superior */
-//   header: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     justifyContent: 'space-between',
-//     paddingHorizontal: 20,
-//     paddingVertical: 14,
-//     backgroundColor: '#FFFFFF',
-//     borderBottomWidth: 1,
-//     borderBottomColor: '#E2E8F0',
-//     zIndex: 10,
-//   },
-//   headerLeft: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     flex: 1,
-//     gap: 14,
-//   },
-//   headerRight: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     gap: 10,
-//   },
-//   headerTitle: {
-//     flex: 1,
-//     fontSize: 17,
-//     fontWeight: '700',
-//     color: '#0F172A',
-//   },
-//   iconButton: {
-//     padding: 10,
-//     borderRadius: 12,
-//     backgroundColor: '#F1F5F9',
-//   },
+                        <Text style={styles.avaliacaoComentario}>
+                          "{item.comentario || 'Sem comentário adicional.'}"
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+                ) : (
+                  <View style={styles.emptyCard}>
+                    <MaterialCommunityIcons name="star-outline" size={54} color="#94A3B8" />
+                    <Text style={styles.emptyTitle}>Nenhuma avaliação recebida</Text>
+                    <Text style={styles.emptyText}>
+                      Este vendedor ainda não foi avaliado por outros usuários na plataforma.
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
 
-//   /* Estrutura de Layout */
-//   scrollContent: {
-//     paddingBottom: 100,
-//   },
-//   scrollContentDesktop: {
-//     paddingVertical: 32,
-//     alignItems: 'center',
-//   },
-//   mainLayout: {
-//     width: '100%',
-//     padding: 16,
-//     gap: 24,
-//   },
-//   mainLayoutDesktop: {
-//     maxWidth: 1200,
-//     flexDirection: 'row',
-//     gap: 32,
-//     paddingHorizontal: 24,
-//     alignItems: 'flex-start',
-//   },
+          </View>
+        </View>
+      </ScrollView>
 
-//   sidebar: {
-//     width: '100%',
-//     gap: 20,
-//   },
-//   sidebarDesktop: {
-//     width: 380,
-//   },
-//   contentArea: {
-//     width: '100%',
-//     gap: 20,
-//   },
-//   contentAreaDesktop: {
-//     flex: 1,
-//   },
+      {/* RODAPÉ FIXO DE AÇÃO PARA DISPOSITIVOS MÓVEIS */}
+      {!isDesktop && (
+        <View style={styles.mobileFooterSticky}>
+          <TouchableOpacity
+            style={styles.mobileChatButton}
+            onPress={() => router.push('/chat')}
+            activeOpacity={0.85}
+          >
+            <MaterialCommunityIcons name="message-text-outline" size={22} color="#FFF" />
+            <Text style={styles.mobileChatButtonText}>Conversar no Chat</Text>
+          </TouchableOpacity>
+        </View>
+      )}
+    </SafeAreaView>
+  );
+}
 
-//   /* Card de Perfil do Vendedor */
-//   profileCard: {
-//     backgroundColor: '#FFFFFF',
-//     borderRadius: 20,
-//     padding: 24,
-//     borderWidth: 1,
-//     borderColor: '#E2E8F0',
-//     alignItems: 'center',
-//     shadowColor: '#000',
-//     shadowOffset: { width: 0, height: 2 },
-//     shadowOpacity: 0.03,
-//     shadowRadius: 8,
-//     elevation: 2,
-//   },
-//   avatarContainer: {
-//     position: 'relative',
-//     marginBottom: 14,
-//   },
-//   avatarWrapper: {
-//     width: 88,
-//     height: 88,
-//     borderRadius: 44,
-//     backgroundColor: '#DCFCE7',
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//     borderWidth: 3,
-//     borderColor: '#86EFAC',
-//   },
-//   verificationBadge: {
-//     position: 'absolute',
-//     bottom: 2,
-//     right: 2,
-//     backgroundColor: '#FFFFFF',
-//     borderRadius: 12,
-//   },
-//   vendedorName: {
-//     fontSize: 20,
-//     fontWeight: '800',
-//     color: '#0F172A',
-//     textAlign: 'center',
-//   },
-//   vendedorTypeBadge: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     gap: 6,
-//     backgroundColor: '#DCFCE7',
-//     paddingHorizontal: 12,
-//     paddingVertical: 5,
-//     borderRadius: 16,
-//     marginTop: 8,
-//     borderWidth: 1,
-//     borderColor: '#86EFAC',
-//   },
-//   vendedorTypeText: {
-//     color: '#15803D',
-//     fontSize: 11,
-//     fontWeight: '700',
-//   },
-//   locationContainer: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     gap: 6,
-//     marginTop: 12,
-//   },
-//   locationText: {
-//     fontSize: 13,
-//     color: '#64748B',
-//   },
-//   emailContainer: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     gap: 6,
-//     marginTop: 6,
-//   },
-//   emailText: {
-//     fontSize: 13,
-//     color: '#64748B',
-//   },
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F8FAFC',
+  },
+  loadingText: {
+    marginTop: 14,
+    color: '#64748B',
+    fontSize: 15,
+    fontWeight: '500',
+  },
 
-//   /* Avaliação */
-//   ratingCard: {
-//     width: '100%',
-//     backgroundColor: '#F8FAFC',
-//     borderRadius: 14,
-//     padding: 14,
-//     marginTop: 16,
-//     alignItems: 'center',
-//     borderWidth: 1,
-//     borderColor: '#F1F5F9',
-//     gap: 10,
-//   },
-//   ratingRow: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     gap: 6,
-//   },
-//   ratingValue: {
-//     fontSize: 18,
-//     fontWeight: '800',
-//     color: '#0F172A',
-//   },
-//   ratingCount: {
-//     fontSize: 12,
-//     color: '#64748B',
-//   },
-//   rateActionButton: {
-//     backgroundColor: '#FFFBEB',
-//     paddingHorizontal: 16,
-//     paddingVertical: 8,
-//     borderRadius: 10,
-//     borderWidth: 1,
-//     borderColor: '#FDE68A',
-//   },
-//   rateActionButtonText: {
-//     color: '#D97706',
-//     fontSize: 12,
-//     fontWeight: '700',
-//   },
+  /* Header Superior */
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E2E8F0',
+    zIndex: 10,
+  },
+  headerTitle: {
+    flex: 1,
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginLeft: 12,
+  },
+  headerRightActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  iconButton: {
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: '#F1F5F9',
+  },
 
-//   /* Estatísticas Card */
-//   statsCard: {
-//     backgroundColor: '#FFFFFF',
-//     borderRadius: 20,
-//     padding: 20,
-//     borderWidth: 1,
-//     borderColor: '#E2E8F0',
-//     gap: 16,
-//   },
-//   statsCardTitle: {
-//     fontSize: 15,
-//     fontWeight: '700',
-//     color: '#0F172A',
-//   },
-//   statsGrid: {
-//     flexDirection: 'row',
-//     flexWrap: 'wrap',
-//     gap: 10,
-//   },
-//   statBox: {
-//     width: '48%',
-//     backgroundColor: '#F8FAFC',
-//     padding: 12,
-//     borderRadius: 12,
-//     alignItems: 'center',
-//     borderWidth: 1,
-//     borderColor: '#F1F5F9',
-//   },
-//   statNumber: {
-//     fontSize: 16,
-//     fontWeight: '800',
-//     color: '#0F172A',
-//   },
-//   statLabel: {
-//     fontSize: 11,
-//     color: '#64748B',
-//     marginTop: 2,
-//     textAlign: 'center',
-//   },
+  /* Layout Geral */
+  scrollContent: {
+    paddingBottom: 100,
+  },
+  scrollContentDesktop: {
+    paddingVertical: 32,
+    alignItems: 'center',
+  },
+  mainLayout: {
+    width: '100%',
+    padding: 16,
+    gap: 20,
+  },
+  mainLayoutDesktop: {
+    maxWidth: 1200,
+    flexDirection: 'row',
+    gap: 32,
+    paddingHorizontal: 24,
+    alignItems: 'flex-start',
+  },
 
-//   /* Banner Ecológico */
-//   ecoBanner: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     backgroundColor: '#F0FDF4',
-//     padding: 16,
-//     borderRadius: 16,
-//     borderWidth: 1,
-//     borderColor: '#DCFCE7',
-//     gap: 14,
-//   },
-//   ecoBannerIcon: {
-//     width: 48,
-//     height: 48,
-//     borderRadius: 24,
-//     backgroundColor: '#DCFCE7',
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//   },
-//   ecoBannerContent: {
-//     flex: 1,
-//     gap: 2,
-//   },
-//   ecoBannerTitle: {
-//     fontSize: 14,
-//     fontWeight: '700',
-//     color: '#15803D',
-//   },
-//   ecoBannerDesc: {
-//     fontSize: 12,
-//     color: '#334155',
-//     lineHeight: 18,
-//   },
+  /* Sidebar Esquerda */
+  sidebarPanel: {
+    width: '100%',
+    gap: 20,
+  },
+  sidebarPanelDesktop: {
+    flex: 1,
+    maxWidth: 380,
+  },
 
-//   /* Seção de Anúncios */
-//   sectionHeader: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     justifyContent: 'space-between',
-//     marginTop: 8,
-//   },
-//   sectionTitleGroup: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     gap: 10,
-//   },
-//   sectionTitle: {
-//     fontSize: 18,
-//     fontWeight: '800',
-//     color: '#0F172A',
-//   },
-//   badgeCounter: {
-//     backgroundColor: '#E2E8F0',
-//     paddingHorizontal: 8,
-//     paddingVertical: 2,
-//     borderRadius: 10,
-//   },
-//   badgeCounterText: {
-//     fontSize: 12,
-//     fontWeight: '700',
-//     color: '#475569',
-//   },
+  /* Profile Card */
+  profileCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+  },
+  bannerHeader: {
+    height: 80,
+    backgroundColor: '#15803D',
+    position: 'relative',
+    marginBottom: 42,
+  },
+  avatarWrapper: {
+    position: 'absolute',
+    bottom: -36,
+    alignSelf: 'center',
+  },
+  avatarCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    backgroundColor: '#DCFCE7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  verifiedIcon: {
+    position: 'absolute',
+    bottom: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    borderRadius: 10,
+  },
+  profileBody: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingBottom: 20,
+    gap: 8,
+  },
+  vendedorNome: {
+    fontSize: 20,
+    fontWeight: '800',
+    color: '#0F172A',
+    textAlign: 'center',
+  },
+  typeBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 12,
+    paddingVertical: 5,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+  },
+  typeBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#15803D',
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  locationText: {
+    fontSize: 13,
+    color: '#64748B',
+  },
+  dataCadastroText: {
+    fontSize: 12,
+    color: '#94A3B8',
+  },
 
-//   /* Grid de Anúncios */
-//   anunciosGrid: {
-//     gap: 16,
-//   },
-//   anunciosGridDesktop: {
-//     flexDirection: 'row',
-//     flexWrap: 'wrap',
-//   },
-//   anuncioCard: {
-//     backgroundColor: '#FFFFFF',
-//     borderRadius: 16,
-//     borderWidth: 1,
-//     borderColor: '#E2E8F0',
-//     overflow: 'hidden',
-//     flexDirection: 'row',
-//   },
-//   anuncioCardDesktop: {
-//     width: '48.5%',
-//     flexDirection: 'column',
-//   },
-//   anuncioImageWrapper: {
-//     width: 120,
-//     height: '100%',
-//     minHeight: 120,
-//     backgroundColor: '#F1F5F9',
-//     position: 'relative',
-//   },
-//   anuncioImage: {
-//     width: '100%',
-//     height: '100%',
-//   },
-//   anuncioPlaceholder: {
-//     width: '100%',
-//     height: '100%',
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//     backgroundColor: '#F0FDF4',
-//   },
-//   anuncioCategoryBadge: {
-//     position: 'absolute',
-//     top: 8,
-//     left: 8,
-//     backgroundColor: 'rgba(15, 23, 42, 0.85)',
-//     paddingHorizontal: 8,
-//     paddingVertical: 3,
-//     borderRadius: 10,
-//   },
-//   anuncioCategoryText: {
-//     color: '#FFFFFF',
-//     fontSize: 10,
-//     fontWeight: '700',
-//   },
-//   anuncioBody: {
-//     flex: 1,
-//     padding: 14,
-//     justifyContent: 'space-between',
-//     gap: 8,
-//   },
-//   anuncioTitle: {
-//     fontSize: 15,
-//     fontWeight: '700',
-//     color: '#0F172A',
-//     lineHeight: 20,
-//   },
-//   anuncioQuantityRow: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     gap: 6,
-//   },
-//   anuncioQuantityText: {
-//     fontSize: 12,
-//     color: '#64748B',
-//     fontWeight: '500',
-//   },
-//   anuncioFooter: {
-//     flexDirection: 'row',
-//     alignItems: 'center',
-//     justifyContent: 'space-between',
-//     marginTop: 4,
-//   },
-//   anuncioPriceLabel: {
-//     fontSize: 10,
-//     color: '#64748B',
-//     textTransform: 'uppercase',
-//   },
-//   anuncioPriceValue: {
-//     fontSize: 17,
-//     fontWeight: '800',
-//     color: '#16A34A',
-//   },
-//   anuncioArrowBtn: {
-//     width: 32,
-//     height: 32,
-//     borderRadius: 16,
-//     backgroundColor: '#F0FDF4',
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//   },
+  /* Métricas */
+  metricsGrid: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-around',
+    width: '100%',
+    backgroundColor: '#F8FAFC',
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    marginTop: 8,
+  },
+  metricItem: {
+    alignItems: 'center',
+    gap: 2,
+  },
+  ratingBox: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  ratingScoreText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#D97706',
+  },
+  metricValueText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#0F172A',
+  },
+  metricLabel: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  metricDivider: {
+    width: 1,
+    height: 28,
+    backgroundColor: '#E2E8F0',
+  },
 
-//   /* Estado Vazio */
-//   emptyContainer: {
-//     backgroundColor: '#FFFFFF',
-//     borderRadius: 20,
-//     padding: 40,
-//     alignItems: 'center',
-//     justifyContent: 'center',
-//     borderWidth: 1,
-//     borderColor: '#E2E8F0',
-//     gap: 12,
-//   },
-//   emptyTitle: {
-//     fontSize: 16,
-//     fontWeight: '700',
-//     color: '#0F172A',
-//   },
-//   emptyDesc: {
-//     fontSize: 13,
-//     color: '#64748B',
-//     textAlign: 'center',
-//     lineHeight: 20,
-//   },
+  /* Card Segurança */
+  securityCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 16,
+  },
+  securityItem: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+  },
+  securityTextGroup: {
+    flex: 1,
+    gap: 2,
+  },
+  securityTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  securityDesc: {
+    fontSize: 12,
+    color: '#64748B',
+    lineHeight: 18,
+  },
 
-//   /* Botão de Chat Ação Principal */
-//   chatButtonPrimary: {
-//     backgroundColor: '#16A34A',
-//     flexDirection: 'row',
-//     justifyContent: 'center',
-//     alignItems: 'center',
-//     gap: 10,
-//     paddingVertical: 16,
-//     borderRadius: 14,
-//     width: '100%',
-//     marginTop: 10,
-//     shadowColor: '#16A34A',
-//     shadowOffset: { width: 0, height: 4 },
-//     shadowOpacity: 0.2,
-//     shadowRadius: 8,
-//     elevation: 4,
-//   },
-//   chatButtonText: {
-//     color: '#FFFFFF',
-//     fontSize: 16,
-//     fontWeight: '700',
-//   },
+  /* Botões Desktop */
+  desktopActionsBox: {
+    gap: 10,
+  },
+  btnPrimaryChat: {
+    backgroundColor: '#16A34A',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 16,
+    borderRadius: 14,
+  },
+  btnPrimaryChatText: {
+    color: '#FFFFFF',
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  btnSecondaryAvaliar: {
+    backgroundColor: '#FFFBEB',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 8,
+    paddingVertical: 14,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#FDE68A',
+  },
+  btnSecondaryAvaliarText: {
+    color: '#D97706',
+    fontSize: 14,
+    fontWeight: '700',
+  },
 
-//   /* Footer Mobile Fixo */
-//   footerMobile: {
-//     position: 'absolute',
-//     bottom: 0,
-//     left: 0,
-//     right: 0,
-//     backgroundColor: '#FFFFFF',
-//     paddingHorizontal: 20,
-//     paddingVertical: 14,
-//     borderTopWidth: 1,
-//     borderTopColor: '#E2E8F0',
-//     elevation: 10,
-//   },
-// });
+  /* Conteúdo Principal */
+  mainContentPanel: {
+    width: '100%',
+    gap: 16,
+  },
+  mainContentPanelDesktop: {
+    flex: 2,
+  },
+
+  /* Abas Mobile */
+  mobileTabsContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#E2E8F0',
+    borderRadius: 14,
+    padding: 4,
+  },
+  tabButton: {
+    flex: 1,
+    paddingVertical: 10,
+    alignItems: 'center',
+    borderRadius: 10,
+  },
+  tabButtonActive: {
+    backgroundColor: '#FFFFFF',
+  },
+  tabButtonText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  tabButtonTextActive: {
+    color: '#16A34A',
+    fontWeight: '700',
+  },
+
+  /* Seção de Conteúdo */
+  sectionBlock: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    gap: 16,
+  },
+  sectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionHeaderBetween: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  sectionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  addReviewBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+  },
+  addReviewBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+
+  /* Grid Anúncios */
+  anunciosGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 16,
+  },
+  anuncioCard: {
+    width: '100%',
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    overflow: 'hidden',
+  },
+  anuncioCardDesktop: {
+    width: '48%',
+  },
+  anuncioImageContainer: {
+    width: '100%',
+    height: 160,
+    backgroundColor: '#F1F5F9',
+    position: 'relative',
+  },
+  anuncioImage: {
+    width: '100%',
+    height: '100%',
+  },
+  anuncioPlaceholder: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
+    alignItems: 'center',
+    backgroundColor: '#F0FDF4',
+  },
+  categoryBadge: {
+    position: 'absolute',
+    top: 10,
+    left: 10,
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+  },
+  categoryBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
+  anuncioContent: {
+    padding: 14,
+    gap: 10,
+  },
+  anuncioTitulo: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+    lineHeight: 20,
+  },
+  anuncioPriceRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  priceLabel: {
+    fontSize: 10,
+    color: '#64748B',
+    textTransform: 'uppercase',
+  },
+  priceValue: {
+    fontSize: 17,
+    fontWeight: '800',
+    color: '#16A34A',
+  },
+  quantityTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#F0FDF4',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#DCFCE7',
+  },
+  quantityTagText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#15803D',
+  },
+
+  /* Lista de Avaliações */
+  avaliacoesList: {
+    gap: 12,
+  },
+  avaliacaoCard: {
+    backgroundColor: '#F8FAFC',
+    borderRadius: 14,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: '#F1F5F9',
+    gap: 8,
+  },
+  avaliacaoHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  avaliadorAvatar: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: '#DCFCE7',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avaliadorInfo: {
+    gap: 2,
+  },
+  avaliadorNome: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  starsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+  },
+  avaliacaoComentario: {
+    fontSize: 13,
+    color: '#334155',
+    fontStyle: 'italic',
+    lineHeight: 20,
+  },
+
+  /* Estado Vazio */
+  emptyCard: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 32,
+    gap: 10,
+  },
+  emptyTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  emptyText: {
+    fontSize: 13,
+    color: '#64748B',
+    textAlign: 'center',
+  },
+
+  /* Sticky Footer Mobile */
+  mobileFooterSticky: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    backgroundColor: '#FFFFFF',
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#E2E8F0',
+    elevation: 10,
+  },
+  mobileChatButton: {
+    backgroundColor: '#16A34A',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 14,
+    borderRadius: 14,
+  },
+  mobileChatButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
+  },
+});
