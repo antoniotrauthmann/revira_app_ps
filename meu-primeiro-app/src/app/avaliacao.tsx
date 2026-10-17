@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   View,
   Text,
@@ -12,21 +12,46 @@ import {
   SafeAreaView
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config/api';
 
 export default function AvaliacaoScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ id_transacao?: string; id_avaliado?: string; nome?: string }>();
   const [nota, setNota] = useState(0);
   const [comentario, setComentario] = useState('');
   const [loading, setLoading] = useState(false);
+  const [idAvaliador, setIdAvaliador] = useState<number | null>(null);
 
-  // Nome fictício do vendedor/comprador para a interface
-  const nomeUsuarioAvaliado = "João (Catador)"; 
+  const idTransacao = Number(params.id_transacao);
+  const idAvaliado = Number(params.id_avaliado);
+  const nomeUsuarioAvaliado = params.nome || 'esta pessoa';
+
+  useEffect(() => {
+    const carregarUsuario = async () => {
+      const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+      if (!dadosSalvos) {
+        router.replace('/');
+        return;
+      }
+      const usuario = JSON.parse(dadosSalvos) as { id_usuario?: number };
+      setIdAvaliador(usuario.id_usuario || null);
+    };
+
+    carregarUsuario().catch((error) => {
+      console.error('Erro ao identificar usuário para avaliação:', error);
+      Alert.alert('Erro', 'Não foi possível identificar o usuário logado.');
+    });
+  }, [router]);
 
   const handleAvaliar = async () => {
     if (nota === 0) {
       Alert.alert('Atenção', 'Por favor, selecione uma nota de 1 a 5 estrelas.');
+      return;
+    }
+    if (!idAvaliador || !Number.isInteger(idTransacao) || !Number.isInteger(idAvaliado)) {
+      Alert.alert('Erro', 'Esta transação não está disponível para avaliação.');
       return;
     }
 
@@ -39,33 +64,36 @@ export default function AvaliacaoScreen() {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          id_transacao: 1, 
-          id_avaliador: 1, 
-          id_avaliado: 1,  
+          id_transacao: idTransacao,
+          id_avaliador: idAvaliador,
+          id_avaliado: idAvaliado,
           nota: nota,
-          comentario: comentario,
+          comentario: comentario.trim(),
         }),
       });
 
       if (response.ok) {
+        const voltarParaAvaliacoes = () => router.replace('/minhas_avaliacoes');
         if (Platform.OS === 'web') {
           window.alert('Sucesso! A sua avaliação foi enviada com sucesso.');
-          router.push('/anuncio_listagem');
+          voltarParaAvaliacoes();
         } else {
           Alert.alert('Sucesso!', 'A sua avaliação foi enviada com sucesso.', [
             { 
               text: 'OK', 
-              onPress: () => router.push('/anuncio_listagem')
+              onPress: voltarParaAvaliacoes
             }
           ]);
         }
       } else {
         const errorData = await response.json();
-        throw new Error(errorData.mensagem || 'Falha ao enviar avaliação');
+        throw new Error(errorData.mensagem || 'Falha ao enviar avaliação.');
       }
     } catch (error) {
       console.error(error);
-      Alert.alert('Erro', 'Não foi possível enviar a avaliação. Tente novamente.');
+      const mensagem = error instanceof Error ? error.message : 'Não foi possível enviar a avaliação.';
+      if (Platform.OS === 'web') window.alert(mensagem);
+      else Alert.alert('Erro', mensagem);
     } finally {
       setLoading(false);
     }
@@ -138,7 +166,7 @@ export default function AvaliacaoScreen() {
           <TouchableOpacity 
             style={[styles.button, nota === 0 && styles.buttonDisabled]} 
             onPress={handleAvaliar}
-            disabled={loading || nota === 0}
+            disabled={loading || nota === 0 || !idAvaliador}
           >
             {loading ? (
               <ActivityIndicator color="#FFF" />

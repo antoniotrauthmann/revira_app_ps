@@ -267,6 +267,7 @@ CREATE TABLE `usuario` (
   `senha_hash` varchar(255) NOT NULL,
   `tipo` enum('catador','cooperativa','industria','empresa','consumidor','admin') NOT NULL,
   `cpf_cnpj` varchar(20) DEFAULT NULL,
+  `foto_perfil` longtext DEFAULT NULL,
   `data_cadastro` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   StyleSheet,
   Text,
   View,
+  Image,
   TouchableOpacity,
   ScrollView,
   SafeAreaView,
@@ -12,9 +13,9 @@ import {
   Switch,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE_URL } from '../config/api';
+import { API_BASE_URL, resolveProfileImageUrl } from '../config/api';
 
 // Tipo para os dados do usuário
 interface Usuario {
@@ -23,6 +24,7 @@ interface Usuario {
   email: string;
   tipo: string;
   cpf_cnpj?: string | null;
+  foto_perfil?: string | null;
   data_cadastro?: string;
 }
 
@@ -88,11 +90,7 @@ export default function ProfileScreen() {
 
   const API_URL = API_BASE_URL;
 
-  useEffect(() => {
-    carregarPerfil();
-  }, []);
-
-  const carregarPerfil = async () => {
+  const carregarPerfil = useCallback(async () => {
     try {
       // Busca o ID do usuário salvo no AsyncStorage
       const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
@@ -109,7 +107,8 @@ export default function ProfileScreen() {
       const response = await fetch(`${API_URL}/usuario/${usuarioLocal.id_usuario}`);
 
       if (response.ok) {
-        const dadosAtualizados = await response.json();
+        const dadosAtualizados: Usuario = await response.json();
+        dadosAtualizados.foto_perfil = resolveProfileImageUrl(dadosAtualizados.foto_perfil);
         setUsuario(dadosAtualizados);
         // Atualiza o cache local
         await AsyncStorage.setItem('@usuario_logado', JSON.stringify(dadosAtualizados));
@@ -131,7 +130,14 @@ export default function ProfileScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      void carregarPerfil();
+    }, [carregarPerfil])
+  );
 
   const handleLogout = async () => {
     const executarLogout = async () => {
@@ -209,24 +215,33 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <TouchableOpacity
+        onPress={handleVoltar}
+        style={styles.backButton}
+        accessibilityLabel="Voltar"
+      >
+        <MaterialCommunityIcons name="arrow-left" size={24} color="#1B5E20" />
+      </TouchableOpacity>
+
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        
-        {/* Header com botão voltar */}
+        {/* O título rola com o conteúdo; apenas a seta fica fixa. */}
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={handleVoltar} style={styles.backButton}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color="#1B5E20" />
-          </TouchableOpacity>
+          <View style={styles.headerSpacer} />
           <Text style={styles.topBarTitle}>Meu Perfil</Text>
-          <View style={{ width: 40 }} />
+          <View style={styles.headerSpacer} />
         </View>
 
         {/* Card do perfil do usuário */}
         <View style={styles.profileCard}>
           <View style={styles.avatarGradient}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {usuario ? getIniciais(usuario.usuario_nome) : '??'}
-              </Text>
+              {usuario?.foto_perfil ? (
+                <Image source={{ uri: usuario.foto_perfil }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {usuario ? getIniciais(usuario.usuario_nome) : '??'}
+                </Text>
+              )}
             </View>
           </View>
 
@@ -252,7 +267,8 @@ export default function ProfileScreen() {
           <MenuItem
             icon="account-edit-outline"
             label="Editar Perfil"
-            subtitle="Nome, foto e informações pessoais"
+            subtitle="Nome, tipo de conta e foto"
+            onPress={() => router.push('/editar_perfil')}
           />
           <View style={styles.menuDivider} />
           <MenuItem
@@ -393,12 +409,20 @@ const styles = StyleSheet.create({
     backgroundColor: '#F4F9F4',
   },
   backButton: {
+    position: 'absolute',
+    zIndex: 10,
+    elevation: 10,
+    top: Platform.OS === 'android' ? 40 : 12,
+    left: 16,
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: '#E8F5E9',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerSpacer: {
+    width: 40,
   },
   topBarTitle: {
     fontSize: 18,
@@ -451,6 +475,11 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     color: '#FFF',
     letterSpacing: 1,
+  },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 40,
   },
   userName: {
     fontSize: 22,

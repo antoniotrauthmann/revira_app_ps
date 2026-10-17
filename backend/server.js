@@ -2,15 +2,20 @@ const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
 const crypto = require('crypto');
+const fs = require('fs/promises');
+const path = require('path');
 const bcrypt = require('bcrypt');
 const { enviarCodigoRecuperacao } = require('./email');
 
 const app = express();
 app.use(cors());
+const MAX_PROFILE_IMAGE_SIZE = 5 * 1024 * 1024;
+const PROFILE_IMAGE_DIRECTORY = path.join(__dirname, 'uploads', 'profile');
+const PROFILE_IMAGE_URL_PREFIX = '/uploads/profile/';
 
-// Limite expandido para permitir o envio de imagens em Base64
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ limit: '50mb', extended: true }));
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ limit: '10mb', extended: true }));
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Conexão com o MySQL do XAMPP
 const db = mysql.createConnection({
@@ -40,7 +45,7 @@ app.get('/usuario', (req, res) => {
 
 app.get('/usuario/:id', (req, res) => {
   const { id } = req.params;
-  const query = 'SELECT id_usuario, usuario_nome, email, tipo, cpf_cnpj, data_cadastro FROM usuario WHERE id_usuario = ?';
+  const query = 'SELECT id_usuario, usuario_nome, email, tipo, cpf_cnpj, foto_perfil, data_cadastro FROM usuario WHERE id_usuario = ?';
 
   db.query(query, [id], (err, results) => {
     if (err) {
@@ -54,6 +59,119 @@ app.get('/usuario/:id', (req, res) => {
 
     res.json(results[0]);
   });
+});
+
+app.put('/usuario/:id', async (req, res) => {
+  const { id } = req.params;
+  const { usuario_nome, tipo, foto_perfil } = req.body;
+
+  if (typeof usuario_nome !== 'string' || typeof tipo !== 'string') {
+    return res.status(400).json({ mensagem: 'Nome e tipo de conta são obrigatórios.' });
+  }
+
+  const nome = usuario_nome.trim();
+  if (!nome || nome.length > 150) {
+    return res.status(400).json({ mensagem: 'O nome deve conter entre 1 e 150 caracteres.' });
+  }
+  const tiposPermitidos = ['catador', 'cooperativa', 'industria', 'empresa', 'consumidor', 'admin'];
+  if (!tiposPermitidos.includes(tipo)) {
+    return res.status(400).json({ mensagem: 'Tipo de conta inválido.' });
+  }
+  if (foto_perfil !== undefined && foto_perfil !== null) {
+    if (typeof foto_perfil !== 'string') {
+      return res.status(400).json({ mensagem: 'A foto de perfil é inválida.' });
+    }
+
+    if (foto_perfil.startsWith('data:image/jpeg;base64,')) {
+      const conteudoBase64 = foto_perfil.slice('data:image/jpeg;base64,'.length);
+      if (
+        !/^[A-Za-z0-9+/]+={0,2}$/.test(conteudoBase64) ||
+        Buffer.byteLength(conteudoBase64, 'base64') > MAX_PROFILE_IMAGE_SIZE
+      ) {
+        return res.status(400).json({ mensagem: 'A foto de perfil deve ser JPEG e ter até 5 MB.' });
+      }
+    } else if (!/^\/uploads\/profile\/[a-f0-9-]+\.jpg$/i.test(foto_perfil)) {
+      return res.status(400).json({ mensagem: 'A foto de perfil enviada é inválida.' });
+    }
+  }
+
+  let novaFotoSalva = null;
+  try {
+    const [rows] = await db.promise().query(
+      'SELECT tipo, foto_perfil FROM usuario WHERE id_usuario = ?',
+      [id]
+    );
+    if (rows.length === 0) {
+      return res.status(404).json({ mensagem: 'Usuário não encontrado.' });
+    }
+    if ((rows[0].tipo === 'admin') !== (tipo === 'admin')) {
+      return res.status(403).json({ mensagem: 'Não é permitido alterar o tipo de conta de administrador.' });
+    }
+
+    const fotoAnterior = rows[0].foto_perfil;
+    let caminhoFoto = foto_perfil === undefined ? fotoAnterior : foto_perfil;
+
+    if (typeof foto_perfil === 'string' && foto_perfil.startsWith('data:image/jpeg;base64,')) {
+      const imagem = Buffer.from(foto_perfil.slice('data:image/jpeg;base64,'.length), 'base64');
+      if (imagem.length < 3 || imagem[0] !== 0xff || imagem[1] !== 0xd8 || imagem[2] !== 0xff) {
+        return res.status(400).json({ mensagem: 'O arquivo enviado não é uma imagem JPEG válida.' });
+      }
+
+      await fs.mkdir(PROFILE_IMAGE_DIRECTORY, { recursive: true });
+      const nomeArquivo = `${crypto.randomUUID()}.jpg`;
+      const caminhoArquivo = path.join(PROFILE_IMAGE_DIRECTORY, nomeArquivo);
+      await fs.writeFile(caminhoArquivo, imagem, { flag: 'wx' });
+      novaFotoSalva = caminhoArquivo;
+      caminhoFoto = `${PROFILE_IMAGE_URL_PREFIX}${nomeArquivo}`;
+    } else if (
+      typeof foto_perfil === 'string' &&
+      foto_perfil.startsWith(PROFILE_IMAGE_URL_PREFIX) &&
+      foto_perfil !== fotoAnterior
+    ) {
+      return res.status(400).json({ mensagem: 'Não é permitido reutilizar o caminho de outra foto.' });
+    }
+
+    await db.promise().query(
+      'UPDATE usuario SET usuario_nome = ?, tipo = ?, foto_perfil = ? WHERE id_usuario = ?',
+      [nome, tipo, caminhoFoto, id]
+    );
+    novaFotoSalva = null;
+
+    if (
+      typeof fotoAnterior === 'string' &&
+      fotoAnterior.startsWith(PROFILE_IMAGE_URL_PREFIX) &&
+      fotoAnterior !== caminhoFoto
+    ) {
+      const nomeFotoAnterior = path.basename(fotoAnterior);
+      try {
+        await fs.unlink(path.join(PROFILE_IMAGE_DIRECTORY, nomeFotoAnterior));
+      } catch (error) {
+        console.error('Não foi possível remover a foto de perfil substituída:', error);
+      }
+    }
+
+    const [updatedRows] = await db.promise().query(
+      'SELECT id_usuario, usuario_nome, email, tipo, cpf_cnpj, foto_perfil, data_cadastro FROM usuario WHERE id_usuario = ?',
+      [id]
+    );
+    if (updatedRows.length === 0) {
+      return res.status(404).json({ mensagem: 'Usuário não encontrado.' });
+    }
+    return res.json({
+      mensagem: 'Perfil atualizado com sucesso.',
+      usuario: updatedRows[0],
+    });
+  } catch (error) {
+    if (novaFotoSalva) {
+      try {
+        await fs.unlink(novaFotoSalva);
+      } catch (cleanupError) {
+        console.error('Não foi possível remover uma foto de perfil não salva:', cleanupError);
+      }
+    }
+    console.error('Erro ao atualizar perfil:', error);
+    return res.status(500).json({ mensagem: 'Erro interno ao atualizar o perfil.' });
+  }
 });
 
 app.post('/usuario/login', (req, res) => {
@@ -397,33 +515,142 @@ app.post('/mensagens', (req, res) => {
 app.post('/avaliacoes', (req, res) => {
   const { id_transacao, id_avaliador, id_avaliado, nota, comentario } = req.body;
 
-  const query = 'INSERT INTO avaliacao (id_transacao, id_avaliador, id_avaliado, nota, comentario) VALUES (?, ?, ?, ?, ?)';
-  
-  db.query(query, [id_transacao, id_avaliador, id_avaliado, nota, comentario], (err, results) => {
-    if (err) {
-      console.error('Erro ao salvar avaliação:', err);
-      return res.status(500).json({ mensagem: 'Erro ao processar avaliação.' });
+  if (
+    !Number.isInteger(Number(id_transacao)) ||
+    Number(id_transacao) < 1 ||
+    !Number.isInteger(Number(id_avaliador)) ||
+    Number(id_avaliador) < 1 ||
+    !Number.isInteger(Number(id_avaliado)) ||
+    Number(id_avaliado) < 1 ||
+    Number(id_avaliador) === Number(id_avaliado) ||
+    !Number.isInteger(Number(nota)) ||
+    Number(nota) < 1 ||
+    Number(nota) > 5 ||
+    (comentario !== undefined && comentario !== null && typeof comentario !== 'string')
+  ) {
+    return res.status(400).json({ mensagem: 'Informe a transação, os participantes e uma nota de 1 a 5.' });
+  }
+
+  const verificaTransacao = `
+    SELECT t.id_transacao
+    FROM transacao t
+    JOIN anuncio a ON a.id_anuncio = t.id_anuncio
+    WHERE t.id_transacao = ?
+      AND t.status = 'concluida'
+      AND (
+        (t.id_comprador = ? AND a.id_usuario = ?)
+        OR (t.id_comprador = ? AND a.id_usuario = ?)
+      )
+  `;
+
+  db.query(
+    verificaTransacao,
+    [id_transacao, id_avaliador, id_avaliado, id_avaliado, id_avaliador],
+    (verifyError, rows) => {
+      if (verifyError) {
+        console.error('Erro ao verificar transação para avaliação:', verifyError);
+        return res.status(500).json({ mensagem: 'Erro interno ao validar a transação.' });
+      }
+      if (rows.length === 0) {
+        return res.status(400).json({ mensagem: 'Apenas participantes podem avaliar uma transação concluída.' });
+      }
+
+      const query = 'INSERT INTO avaliacao (id_transacao, id_avaliador, id_avaliado, nota, comentario) VALUES (?, ?, ?, ?, ?)';
+      db.query(query, [id_transacao, id_avaliador, id_avaliado, Number(nota), comentario?.trim() || null], (err) => {
+        if (err) {
+          if (err.code === 'ER_DUP_ENTRY') {
+            return res.status(409).json({ mensagem: 'Você já avaliou esta transação.' });
+          }
+          console.error('Erro ao salvar avaliação:', err);
+          return res.status(500).json({ mensagem: 'Erro ao processar avaliação.' });
+        }
+        return res.status(201).json({ mensagem: 'Avaliação salva com sucesso!' });
+      });
     }
-    res.status(201).json({ mensagem: 'Avaliação salva com sucesso!' });
+  );
+});
+
+app.get('/usuarios/:id/avaliacoes/pendentes', (req, res) => {
+  const userId = req.params.id;
+  const query = `
+    SELECT
+      t.id_transacao,
+      t.criado_em,
+      t.valor_total,
+      a.anuncio_titulo,
+      CASE
+        WHEN t.id_comprador = ? THEN a.id_usuario
+        ELSE t.id_comprador
+      END AS id_outro_usuario,
+      CASE
+        WHEN t.id_comprador = ? THEN vendedor.usuario_nome
+        ELSE comprador.usuario_nome
+      END AS outro_usuario_nome,
+      CASE
+        WHEN t.id_comprador = ? THEN vendedor.tipo
+        ELSE comprador.tipo
+      END AS outro_usuario_tipo
+    FROM transacao t
+    JOIN anuncio a ON a.id_anuncio = t.id_anuncio
+    JOIN usuario comprador ON comprador.id_usuario = t.id_comprador
+    JOIN usuario vendedor ON vendedor.id_usuario = a.id_usuario
+    LEFT JOIN avaliacao av
+      ON av.id_transacao = t.id_transacao
+      AND av.id_avaliador = ?
+    WHERE t.status = 'concluida'
+      AND av.id_avaliacao IS NULL
+      AND (
+        t.id_comprador = ?
+        OR a.id_usuario = ?
+      )
+      AND (t.id_comprador <> a.id_usuario)
+    ORDER BY t.criado_em DESC
+  `;
+
+  db.query(query, [userId, userId, userId, userId, userId, userId], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar avaliações pendentes:', err);
+      return res.status(500).json({ mensagem: 'Erro ao buscar transações pendentes de avaliação.' });
+    }
+    return res.json(results);
   });
 });
 
-app.get('/usuarios/:id/avaliacoes', (req, res) => {
+app.get('/usuarios/:id/avaliacoes/recebidas', (req, res) => {
   const userId = req.params.id;
-  
   const query = `
-    SELECT a.*, u.usuario_nome AS avaliador_nome 
+    SELECT a.*, u.usuario_nome AS avaliador_nome
     FROM avaliacao a 
     JOIN usuario u ON a.id_avaliador = u.id_usuario 
     WHERE a.id_avaliado = ?
+    ORDER BY a.criado_em DESC
   `;
-  
+
   db.query(query, [userId], (err, results) => {
     if (err) {
-      console.error('Erro ao buscar avaliações do utilizador:', err);
-      return res.status(500).json({ mensagem: 'Erro no servidor' });
+      console.error('Erro ao buscar avaliações recebidas:', err);
+      return res.status(500).json({ mensagem: 'Erro ao buscar avaliações recebidas.' });
     }
-    res.json(results);
+    return res.json(results);
+  });
+});
+
+app.get('/usuarios/:id/avaliacoes/feitas', (req, res) => {
+  const userId = req.params.id;
+  const query = `
+    SELECT a.*, u.usuario_nome AS avaliado_nome
+    FROM avaliacao a
+    JOIN usuario u ON u.id_usuario = a.id_avaliado
+    WHERE a.id_avaliador = ?
+    ORDER BY a.criado_em DESC
+  `;
+
+  db.query(query, [userId], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar avaliações feitas:', err);
+      return res.status(500).json({ mensagem: 'Erro ao buscar avaliações feitas.' });
+    }
+    return res.json(results);
   });
 });
 
