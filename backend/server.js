@@ -16,7 +16,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const db = mysql.createConnection({
   host: 'localhost',
   user: 'root',      
-  port: 3307,
+  port: 3306,
   password: '',      
   database: 'marketplace'
 });
@@ -364,47 +364,66 @@ app.delete('/endereco/:id', (req, res) => {
   });
 });
 
-// --- ROTAS DE MENSAGENS (CHAT) ---
-
-app.get('/mensagens', (req, res) => {
-  const query = 'SELECT id_mensagem, id_remetente, id_destinatario, conteudo, lida, enviado_em, url_imagem FROM mensagem ORDER BY enviado_em ASC';
-  
-  db.query(query, (err, results) => {
-    if (err) {
-      console.error('Erro ao buscar mensagens:', err);
-      return res.status(500).json({ error: err.message });
-    }
-    res.json(results);
-  });
-});
-
-app.post('/mensagens', (req, res) => {
-  const { conteudo, id_remetente, id_destinatario, url_imagem } = req.body;
-
-  const query = 'INSERT INTO mensagem (conteudo, id_remetente, id_destinatario, url_imagem) VALUES (?, ?, ?, ?)';
-  
-  db.query(query, [conteudo, id_remetente, id_destinatario, url_imagem || null], (err, results) => {
-    if (err) {
-      console.error('Erro ao salvar mensagem:', err);
-      return res.status(500).json({ mensagem: 'Erro interno ao salvar mensagem.' });
-    }
-    res.status(201).json({ mensagem: 'Mensagem salva com sucesso', id: results.insertId });
-  });
-});
-
 // --- ROTAS DE AVALIAÇÕES ---
 
 app.post('/avaliacoes', (req, res) => {
   const { id_transacao, id_avaliador, id_avaliado, nota, comentario } = req.body;
 
-  const query = 'INSERT INTO avaliacao (id_transacao, id_avaliador, id_avaliado, nota, comentario) VALUES (?, ?, ?, ?, ?)';
-  
-  db.query(query, [id_transacao, id_avaliador, id_avaliado, nota, comentario], (err, results) => {
+  if (!id_transacao || !id_avaliador || !id_avaliado || !nota) {
+    return res.status(400).json({ mensagem: 'Dados incompletos.' });
+  }
+  if (Number(nota) < 1 || Number(nota) > 5) {
+    return res.status(400).json({ mensagem: 'A nota deve ser de 1 a 5.' });
+  }
+  if (Number(id_avaliador) === Number(id_avaliado)) {
+    return res.status(400).json({ mensagem: 'Você não pode se autoavaliar.' });
+  }
+
+  const busca = `
+    SELECT t.status, t.id_comprador, a.id_usuario AS id_vendedor
+    FROM transacao t
+    JOIN anuncio a ON a.id_anuncio = t.id_anuncio
+    WHERE t.id_transacao = ?
+  `;
+  db.query(busca, [id_transacao], (err, rows) => {
     if (err) {
-      console.error('Erro ao salvar avaliação:', err);
-      return res.status(500).json({ mensagem: 'Erro ao processar avaliação.' });
+      console.error('Erro ao buscar transação:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
     }
-    res.status(201).json({ mensagem: 'Avaliação salva com sucesso!' });
+    if (rows.length === 0) return res.status(404).json({ mensagem: 'Transação não encontrada.' });
+
+    const t = rows[0];
+    const participantes = [Number(t.id_comprador), Number(t.id_vendedor)];
+
+    if (t.status !== 'concluida') {
+      return res.status(400).json({ mensagem: 'Só é possível avaliar transações concluídas.' });
+    }
+    if (!participantes.includes(Number(id_avaliador)) || !participantes.includes(Number(id_avaliado))) {
+      return res.status(403).json({ mensagem: 'Avaliador e avaliado precisam participar da transação.' });
+    }
+
+    db.query(
+      'SELECT 1 FROM avaliacao WHERE id_transacao = ? AND id_avaliador = ?',
+      [id_transacao, id_avaliador],
+      (err, dup) => {
+        if (err) {
+          console.error('Erro ao verificar avaliação:', err);
+          return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+        }
+        if (dup.length > 0) {
+          return res.status(409).json({ mensagem: 'Você já avaliou esta transação.' });
+        }
+
+        const insert = 'INSERT INTO avaliacao (id_transacao, id_avaliador, id_avaliado, nota, comentario) VALUES (?, ?, ?, ?, ?)';
+        db.query(insert, [id_transacao, id_avaliador, id_avaliado, nota, comentario || null], (err) => {
+          if (err) {
+            console.error('Erro ao salvar avaliação:', err);
+            return res.status(500).json({ mensagem: 'Erro ao processar avaliação.' });
+          }
+          res.status(201).json({ mensagem: 'Avaliação salva com sucesso!' });
+        });
+      }
+    );
   });
 });
 
@@ -575,6 +594,308 @@ app.post('/usuario/redefinir_senha', async (req, res) => {
       console.error('Erro ao gerar hash da senha:', hashError);
       return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
     }
+  });
+});
+
+// --- ROTAS DE MENSAGENS (CHAT) ---
+
+app.get('/mensagens', (req, res) => {
+  const { id_anuncio, id_usuario, id_outro } = req.query;
+
+  if (!id_anuncio || !id_usuario || !id_outro) {
+    return res.status(400).json({ mensagem: 'id_anuncio, id_usuario e id_outro são obrigatórios.' });
+  }
+
+  const query = `
+    SELECT m.id_mensagem, m.id_remetente, m.id_destinatario, m.conteudo, m.lida,
+           m.enviado_em, m.url_imagem, m.id_proposta,
+           p.endereco AS proposta_endereco,
+           p.data_hora AS proposta_data_hora,
+           p.quantidade AS proposta_quantidade,
+           p.status AS proposta_status,
+           p.id_proponente AS proposta_proponente
+    FROM mensagem m
+    LEFT JOIN proposta p ON p.id_proposta = m.id_proposta
+    WHERE m.id_anuncio = ?
+      AND ((m.id_remetente = ? AND m.id_destinatario = ?)
+        OR (m.id_remetente = ? AND m.id_destinatario = ?))
+    ORDER BY m.enviado_em ASC, m.id_mensagem ASC
+  `;
+
+  db.query(query, [id_anuncio, id_usuario, id_outro, id_outro, id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar mensagens:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao buscar mensagens.' });
+    }
+    res.json(results);
+  });
+});
+
+app.post('/mensagens', (req, res) => {
+  const { conteudo, id_remetente, id_destinatario, id_anuncio, url_imagem } = req.body;
+
+  if (!id_remetente || !id_anuncio) {
+    return res.status(400).json({ mensagem: 'Remetente e anúncio são obrigatórios.' });
+  }
+
+  db.query('SELECT id_usuario FROM anuncio WHERE id_anuncio = ?', [id_anuncio], (err, rows) => {
+    if (err) {
+      console.error('Erro ao buscar anúncio:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+    if (rows.length === 0) {
+      return res.status(404).json({ mensagem: 'Anúncio não encontrado.' });
+    }
+
+    const idVendedor = Number(rows[0].id_usuario);
+
+    // Comprador escrevendo -> destinatário é sempre o vendedor do anúncio.
+    // Vendedor respondendo -> precisa dizer qual comprador (vem do app).
+    const destinatario =
+      Number(id_remetente) === idVendedor ? Number(id_destinatario) : idVendedor;
+
+    if (!destinatario) {
+      return res.status(400).json({ mensagem: 'Informe o comprador ao responder como vendedor.' });
+    }
+    if (destinatario === Number(id_remetente)) {
+      return res.status(400).json({ mensagem: 'Você não pode enviar mensagem para si mesmo.' });
+    }
+
+    const query = 'INSERT INTO mensagem (conteudo, id_remetente, id_destinatario, id_anuncio, url_imagem) VALUES (?, ?, ?, ?, ?)';
+    db.query(query, [conteudo || '', id_remetente, destinatario, id_anuncio, url_imagem || null], (err, results) => {
+      if (err) {
+        console.error('Erro ao salvar mensagem:', err);
+        return res.status(500).json({ mensagem: 'Erro interno ao salvar mensagem.' });
+      }
+      res.status(201).json({ mensagem: 'Mensagem salva com sucesso', id: results.insertId });
+    });
+  });
+});
+
+// Lista as conversas do usuário (uma por anúncio + pessoa)
+app.get('/conversas', (req, res) => {
+  const { id_usuario } = req.query;
+  if (!id_usuario) {
+    return res.status(400).json({ mensagem: 'id_usuario é obrigatório.' });
+  }
+
+  const query = `
+    SELECT m.id_anuncio, a.anuncio_titulo,
+           CASE WHEN m.id_remetente = ? THEN m.id_destinatario ELSE m.id_remetente END AS id_outro,
+           u.usuario_nome AS outro_nome,
+           m.conteudo, m.url_imagem, m.id_proposta, m.enviado_em
+    FROM mensagem m
+    JOIN (
+      SELECT id_anuncio,
+             LEAST(id_remetente, id_destinatario) AS u1,
+             GREATEST(id_remetente, id_destinatario) AS u2,
+             MAX(id_mensagem) AS ultima
+      FROM mensagem
+      WHERE id_anuncio IS NOT NULL AND (id_remetente = ? OR id_destinatario = ?)
+      GROUP BY id_anuncio, u1, u2
+    ) ult ON ult.ultima = m.id_mensagem
+    JOIN anuncio a ON a.id_anuncio = m.id_anuncio
+    JOIN usuario u ON u.id_usuario =
+      CASE WHEN m.id_remetente = ? THEN m.id_destinatario ELSE m.id_remetente END
+    ORDER BY m.enviado_em DESC
+  `;
+
+  db.query(query, [id_usuario, id_usuario, id_usuario, id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar conversas:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao buscar conversas.' });
+    }
+    res.json(results);
+  });
+});
+
+// --- ROTAS DE PROPOSTAS E TRANSAÇÕES ---
+
+// Cria a proposta e já coloca um cartão dela no chat
+app.post('/propostas', (req, res) => {
+  const { id_anuncio, id_proponente, id_destinatario, endereco, data_hora, quantidade } = req.body;
+
+  if (!id_anuncio || !id_proponente || !id_destinatario || !endereco || !data_hora || !quantidade) {
+    return res.status(400).json({ mensagem: 'Preencha endereço, data, horário e quantidade.' });
+  }
+
+  if (Number(id_proponente) === Number(id_destinatario)) {
+    return res.status(400).json({ mensagem: 'Você não pode fazer acordo consigo mesmo.' });
+  }
+
+  db.query('SELECT id_usuario, quantidade, status FROM anuncio WHERE id_anuncio = ?', [id_anuncio], (err, rows) => {
+    if (err) {
+      console.error('Erro ao buscar anúncio:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+    if (rows.length === 0) return res.status(404).json({ mensagem: 'Anúncio não encontrado.' });
+
+    const anuncio = rows[0];
+
+    if (anuncio.status !== 'ativo') {
+      return res.status(400).json({ mensagem: 'Este anúncio não está mais ativo.' });
+    }
+    // Um dos dois precisa ser o dono do anúncio
+    if (![Number(id_proponente), Number(id_destinatario)].includes(Number(anuncio.id_usuario))) {
+      return res.status(400).json({ mensagem: 'Participantes inválidos para este anúncio.' });
+    }
+    if (Number(quantidade) <= 0 || Number(quantidade) > Number(anuncio.quantidade)) {
+      return res.status(400).json({ mensagem: `Quantidade inválida. O anúncio tem ${anuncio.quantidade} disponível.` });
+    }
+
+    const insertProposta = `
+      INSERT INTO proposta (id_anuncio, id_proponente, id_destinatario, endereco, data_hora, quantidade)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    db.query(insertProposta, [id_anuncio, id_proponente, id_destinatario, endereco.trim(), data_hora, quantidade], (err, result) => {
+      if (err) {
+        console.error('Erro ao criar proposta:', err);
+        return res.status(500).json({ mensagem: 'Erro interno ao criar proposta.' });
+      }
+
+      const id_proposta = result.insertId;
+      const insertMsg = `
+        INSERT INTO mensagem (conteudo, id_remetente, id_destinatario, id_anuncio, id_proposta)
+        VALUES ('Proposta de acordo', ?, ?, ?, ?)
+      `;
+      db.query(insertMsg, [id_proponente, id_destinatario, id_anuncio, id_proposta], (err) => {
+        if (err) {
+          console.error('Erro ao criar mensagem da proposta:', err);
+          return res.status(500).json({ mensagem: 'Erro interno ao enviar proposta.' });
+        }
+        res.status(201).json({ mensagem: 'Proposta enviada!', id_proposta });
+      });
+    });
+  });
+});
+
+// Aceitar ou recusar. Aceitar cria a transação.
+app.put('/propostas/:id/responder', (req, res) => {
+  const { id } = req.params;
+  const { id_usuario, aceitar } = req.body;
+
+  if (!id_usuario || typeof aceitar !== 'boolean') {
+    return res.status(400).json({ mensagem: 'id_usuario e aceitar são obrigatórios.' });
+  }
+
+  const novoStatus = aceitar ? 'aceita' : 'recusada';
+
+  // Só o destinatário responde, e só uma vez
+  const update = `
+    UPDATE proposta SET status = ?
+    WHERE id_proposta = ? AND id_destinatario = ? AND status = 'pendente'
+  `;
+  db.query(update, [novoStatus, id, id_usuario], (err, result) => {
+    if (err) {
+      console.error('Erro ao responder proposta:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(409).json({ mensagem: 'Proposta não encontrada, já respondida, ou você não é o destinatário.' });
+    }
+    if (!aceitar) {
+      return res.json({ mensagem: 'Proposta recusada.' });
+    }
+
+    const busca = `
+      SELECT p.*, a.id_usuario AS id_vendedor, a.preco
+      FROM proposta p
+      JOIN anuncio a ON a.id_anuncio = p.id_anuncio
+      WHERE p.id_proposta = ?
+    `;
+    db.query(busca, [id], (err, rows) => {
+      if (err || rows.length === 0) {
+        console.error('Erro ao buscar proposta aceita:', err);
+        return res.status(500).json({ mensagem: 'Proposta aceita, mas falhou ao criar a transação.' });
+      }
+
+      const p = rows[0];
+      const idComprador = Number(p.id_vendedor) === Number(p.id_proponente) ? p.id_destinatario : p.id_proponente;
+      const valorTotal = Number(p.quantidade) * Number(p.preco);
+
+      const insertTransacao = `
+        INSERT INTO transacao (id_proposta, id_anuncio, id_comprador, quantidade, valor_total, endereco, data_hora, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmada')
+      `;
+      db.query(
+        insertTransacao,
+        [p.id_proposta, p.id_anuncio, idComprador, p.quantidade, valorTotal, p.endereco, p.data_hora],
+        (err, r) => {
+          if (err) {
+            console.error('Erro ao criar transação:', err);
+            return res.status(500).json({ mensagem: 'Proposta aceita, mas falhou ao criar a transação.' });
+          }
+          res.status(201).json({ mensagem: 'Acordo fechado!', id_transacao: r.insertId });
+        }
+      );
+    });
+  });
+});
+
+// --- ROTAS DE TRANSAÇÕES ---
+
+// Lista as transações em que o usuário é comprador ou vendedor
+app.get('/transacoes', (req, res) => {
+  const { id_usuario } = req.query;
+  if (!id_usuario) {
+    return res.status(400).json({ mensagem: 'id_usuario é obrigatório.' });
+  }
+
+  const query = `
+    SELECT t.id_transacao, t.id_anuncio, a.anuncio_titulo,
+           m.material_nome, m.unidade_medida,
+           t.quantidade, t.valor_total, t.endereco, t.data_hora, t.status,
+           t.id_comprador, a.id_usuario AS id_vendedor,
+           uc.usuario_nome AS comprador_nome,
+           uv.usuario_nome AS vendedor_nome,
+           EXISTS (SELECT 1 FROM avaliacao av
+                   WHERE av.id_transacao = t.id_transacao
+                     AND av.id_avaliador = ?) AS ja_avaliei
+    FROM transacao t
+    JOIN anuncio a ON a.id_anuncio = t.id_anuncio
+    JOIN material m ON m.id_material = a.id_material
+    JOIN usuario uc ON uc.id_usuario = t.id_comprador
+    JOIN usuario uv ON uv.id_usuario = a.id_usuario
+    WHERE t.id_comprador = ? OR a.id_usuario = ?
+    ORDER BY t.criado_em DESC
+  `;
+
+  db.query(query, [id_usuario, id_usuario, id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar transações:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao buscar transações.' });
+    }
+    res.json(results);
+  });
+});
+
+// Concluir ou cancelar (só quem participa, e só se ainda estiver em andamento)
+app.put('/transacoes/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { id_usuario, status } = req.body;
+
+  if (!id_usuario || !['concluida', 'cancelada'].includes(status)) {
+    return res.status(400).json({ mensagem: 'Dados inválidos.' });
+  }
+
+  const query = `
+    UPDATE transacao t
+    JOIN anuncio a ON a.id_anuncio = t.id_anuncio
+    SET t.status = ?
+    WHERE t.id_transacao = ?
+      AND t.status IN ('pendente', 'confirmada', 'em_transporte')
+      AND (t.id_comprador = ? OR a.id_usuario = ?)
+  `;
+
+  db.query(query, [status, id, id_usuario, id_usuario], (err, result) => {
+    if (err) {
+      console.error('Erro ao atualizar transação:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(409).json({ mensagem: 'Transação não encontrada, já finalizada, ou você não participa dela.' });
+    }
+    res.json({ mensagem: status === 'concluida' ? 'Transação concluída!' : 'Transação cancelada.' });
   });
 });
 

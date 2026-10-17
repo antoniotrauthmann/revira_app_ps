@@ -57,11 +57,16 @@ export default function HomeScreen() {
             <Text style={styles.cardTitle}>Coletas</Text>
           </TouchableOpacity>
  
-          <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => router.push('/chat')}>
+          <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => router.push('/conversas')}>
             <MaterialCommunityIcons name="message-text" size={40} color="#2E7D32" />
             <Text style={styles.cardTitle}>Mensagens</Text>
           </TouchableOpacity>
  
+          <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => router.push('/transacoes')}>
+            <MaterialCommunityIcons name="handshake-outline" size={40} color="#2E7D32" />
+            <Text style={styles.cardTitle}>Transações</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => router.push('/profile')}>
             <MaterialCommunityIcons name="account" size={40} color="#2E7D32" />
             <Text style={styles.cardTitle}>Meu Perfil</Text>

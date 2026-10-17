@@ -158,7 +158,7 @@ export default function AnunciosScreen() {
 
           <TouchableOpacity
             style={styles.chatButton}
-            onPress={() => router.push('/chat')}
+            onPress={() => router.push({ pathname: '/chat', params: { id_anuncio: item.id_anuncio, id_vendedor: item.id_usuario } })}
             activeOpacity={0.7}
           >
             <MaterialCommunityIcons name="message-text-outline" size={16} color="#FFF" />
