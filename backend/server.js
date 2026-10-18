@@ -1,9 +1,10 @@
+require('dotenv').config();
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
-const { enviarCodigoRecuperacao } = require('./email');
+const { enviarCodigoRecuperacao, enviarCupomRecompensa } = require('./email');
 
 const app = express();
 app.use(cors());
@@ -16,7 +17,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const db = mysql.createConnection({
   host: 'localhost',
   user: 'root',      
-  port: 3306,
+  port: 3307,
   password: '',      
   database: 'marketplace'
 });
@@ -649,8 +650,6 @@ app.post('/mensagens', (req, res) => {
 
     const idVendedor = Number(rows[0].id_usuario);
 
-    // Comprador escrevendo -> destinatário é sempre o vendedor do anúncio.
-    // Vendedor respondendo -> precisa dizer qual comprador (vem do app).
     const destinatario =
       Number(id_remetente) === idVendedor ? Number(id_destinatario) : idVendedor;
 
@@ -672,7 +671,6 @@ app.post('/mensagens', (req, res) => {
   });
 });
 
-// Lista as conversas do usuário (uma por anúncio + pessoa)
 app.get('/conversas', (req, res) => {
   const { id_usuario } = req.query;
   if (!id_usuario) {
@@ -711,7 +709,6 @@ app.get('/conversas', (req, res) => {
 
 // --- ROTAS DE PROPOSTAS E TRANSAÇÕES ---
 
-// Cria a proposta e já coloca um cartão dela no chat
 app.post('/propostas', (req, res) => {
   const { id_anuncio, id_proponente, id_destinatario, endereco, data_hora, quantidade } = req.body;
 
@@ -735,7 +732,6 @@ app.post('/propostas', (req, res) => {
     if (anuncio.status !== 'ativo') {
       return res.status(400).json({ mensagem: 'Este anúncio não está mais ativo.' });
     }
-    // Um dos dois precisa ser o dono do anúncio
     if (![Number(id_proponente), Number(id_destinatario)].includes(Number(anuncio.id_usuario))) {
       return res.status(400).json({ mensagem: 'Participantes inválidos para este anúncio.' });
     }
@@ -769,7 +765,6 @@ app.post('/propostas', (req, res) => {
   });
 });
 
-// Aceitar ou recusar. Aceitar cria a transação.
 app.put('/propostas/:id/responder', (req, res) => {
   const { id } = req.params;
   const { id_usuario, aceitar } = req.body;
@@ -780,7 +775,6 @@ app.put('/propostas/:id/responder', (req, res) => {
 
   const novoStatus = aceitar ? 'aceita' : 'recusada';
 
-  // Só o destinatário responde, e só uma vez
   const update = `
     UPDATE proposta SET status = ?
     WHERE id_proposta = ? AND id_destinatario = ? AND status = 'pendente'
@@ -834,7 +828,6 @@ app.put('/propostas/:id/responder', (req, res) => {
 
 // --- ROTAS DE TRANSAÇÕES ---
 
-// Lista as transações em que o usuário é comprador ou vendedor
 app.get('/transacoes', (req, res) => {
   const { id_usuario } = req.query;
   if (!id_usuario) {
@@ -869,7 +862,6 @@ app.get('/transacoes', (req, res) => {
   });
 });
 
-// Concluir ou cancelar (só quem participa, e só se ainda estiver em andamento)
 app.put('/transacoes/:id/status', (req, res) => {
   const { id } = req.params;
   const { id_usuario, status } = req.body;
@@ -896,6 +888,71 @@ app.put('/transacoes/:id/status', (req, res) => {
       return res.status(409).json({ mensagem: 'Transação não encontrada, já finalizada, ou você não participa dela.' });
     }
     res.json({ mensagem: status === 'concluida' ? 'Transação concluída!' : 'Transação cancelada.' });
+  });
+});
+
+// --- ROTAS DE RECOMPENSAS ---
+
+app.get('/recompensas', (req, res) => {
+  const sql = `
+    SELECT r.*, u.usuario_nome AS parceiro 
+    FROM recompensa r
+    JOIN usuario u ON r.id_empresa = u.id_usuario
+    WHERE r.quantidade > 0
+    ORDER BY r.id_recompensa DESC
+  `;
+  db.query(sql, (err, results) => {
+    if (err) return res.status(500).json({ erro: err.message });
+    res.json(results);
+  });
+});
+
+app.post('/recompensas', (req, res) => {
+  const { id_empresa, titulo, descricao, custo_pontos, quantidade, icone, cor } = req.body;
+  const sql = `INSERT INTO recompensa (id_empresa, titulo, descricao, custo_pontos, quantidade, icone, cor) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+  
+  db.query(sql, [id_empresa, titulo, descricao, custo_pontos, quantidade, icone || 'gift-outline', cor || '#2E7D32'], (err, result) => {
+    if (err) return res.status(500).json({ erro: err.message });
+    res.status(201).json({ id_recompensa: result.insertId, mensagem: 'Recompensa cadastrada!' });
+  });
+});
+
+// RESGATAR RECOMPENSA (Gera cupão, envia e-mail e reduz quantidade)
+app.post('/recompensas/resgatar', (req, res) => {
+  const { id_usuario, email, id_recompensa, titulo_recompensa } = req.body;
+
+  if (!id_usuario || !email || !id_recompensa) {
+    return res.status(400).json({ mensagem: 'Dados incompletos para resgate.' });
+  }
+
+  // 1. Verificar se ainda há stock da recompensa
+  const checkQuery = 'SELECT quantidade FROM recompensa WHERE id_recompensa = ?';
+  db.query(checkQuery, [id_recompensa], (err, results) => {
+    if (err) return res.status(500).json({ erro: 'Erro interno.' });
+    if (results.length === 0 || results[0].quantidade <= 0) {
+      return res.status(400).json({ mensagem: 'Esta recompensa já esgotou.' });
+    }
+
+    // 2. Diminuir a quantidade em 1 no catálogo
+    const updateQuery = 'UPDATE recompensa SET quantidade = quantidade - 1 WHERE id_recompensa = ?';
+    db.query(updateQuery, [id_recompensa], async (errUpdate) => {
+      if (errUpdate) return res.status(500).json({ erro: 'Erro ao atualizar stock.' });
+
+      // 3. Gerar código alfanumérico aleatório de 8 caracteres para o cupão
+      const codigoCupom = Math.random().toString(36).substring(2, 10).toUpperCase();
+
+      // 4. Enviar e-mail ao utilizador
+      try {
+        await enviarCupomRecompensa(email, titulo_recompensa, codigoCupom);
+        res.status(200).json({ 
+          mensagem: 'Resgate realizado com sucesso! E-mail enviado.', 
+          codigo: codigoCupom 
+        });
+      } catch (mailErr) {
+        console.error('Erro ao enviar e-mail de resgate:', mailErr);
+        res.status(500).json({ mensagem: 'Resgate feito, mas falhou ao enviar o e-mail.' });
+      }
+    });
   });
 });
 
