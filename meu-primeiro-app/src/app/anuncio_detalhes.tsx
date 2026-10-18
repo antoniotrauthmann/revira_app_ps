@@ -14,6 +14,7 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter, useLocalSearchParams } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config/api';
 
 const { width } = Dimensions.get('window');
@@ -46,6 +47,8 @@ export default function DetalhesAnuncioScreen() {
   const [anuncio, setAnuncio] = useState<DetalheAnuncio | null>(null);
   const [loading, setLoading] = useState(true);
   const [imagemAtiva, setImagemAtiva] = useState(0);
+  const [idUsuario, setIdUsuario] = useState<number | null>(null);
+  const [comprando, setComprando] = useState(false);
 
   const carregarDetalhes = useCallback(async () => {
     if (!idAnuncio) return;
@@ -71,6 +74,72 @@ export default function DetalhesAnuncioScreen() {
     carregarDetalhes();
   }, [carregarDetalhes]);
 
+  useEffect(() => {
+  carregarUsuarioLogado();
+  }, []);
+ 
+  const carregarUsuarioLogado = async () => {
+  try {
+    const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+    if (dadosSalvos) {
+      setIdUsuario(JSON.parse(dadosSalvos).id_usuario);
+    }
+  } catch (error) {
+    console.error('Erro ao carregar usuário logado:', error);
+  }
+  };
+ 
+  const mostrarMensagem = (titulo: string, mensagem: string) => {
+  if (Platform.OS === 'web') alert(mensagem);
+  else Alert.alert(titulo, mensagem);
+  };
+ 
+  const criarTransacao = async () => {
+  if (!idUsuario || !anuncio) return;
+ 
+  setComprando(true);
+ 
+  try {
+    const response = await fetch(`${API_BASE_URL}/transacoes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id_anuncio: anuncio.id_anuncio,
+        id_comprador: idUsuario,
+      }),
+    });
+ 
+    const data = await response.json();
+ 
+    if (response.ok) {
+      mostrarMensagem('Compra registrada', 'Agora agende a retirada na tela de coletas.');
+      router.push('/coleta' as any);
+    } else {
+      mostrarMensagem('Erro', data.mensagem || 'Não foi possível registrar a compra.');
+    }
+  } catch (error) {
+    console.error('Erro ao registrar compra:', error);
+    mostrarMensagem('Erro de Conexão', 'Não foi possível conectar ao servidor.');
+  } finally {
+    setComprando(false);
+  }
+};
+ 
+const handleComprar = () => {
+  if (!anuncio) return;
+ 
+  const pergunta = `Deseja comprar "${anuncio.anuncio_titulo}"?`;
+ 
+  if (Platform.OS === 'web') {
+    if (window.confirm(pergunta)) criarTransacao();
+    } else {
+    Alert.alert('Confirmar compra', pergunta, [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Comprar', onPress: criarTransacao },
+    ]);
+    }
+  };
+
   const getCategoryIcon = (categoria: string) => {
     switch (categoria?.toLowerCase()) {
       case 'papel':
@@ -93,6 +162,9 @@ export default function DetalhesAnuncioScreen() {
   const dataFormatada = anuncio?.criado_em
     ? new Date(anuncio.criado_em).toLocaleDateString('pt-BR')
     : '';
+  
+  const podeComprar =
+    anuncio?.status === 'ativo' && idUsuario !== null && idUsuario !== anuncio.id_usuario;
 
   if (loading) {
     return (
@@ -253,6 +325,24 @@ export default function DetalhesAnuncioScreen() {
       </ScrollView>
 
       <View style={styles.footer}>
+                {podeComprar && (
+          <TouchableOpacity
+            style={styles.buyButton}
+            onPress={handleComprar}
+            disabled={comprando}
+            activeOpacity={0.8}
+          >
+            {comprando ? (
+              <ActivityIndicator color="#FFF" />
+            ) : (
+              <>
+                <MaterialCommunityIcons name="cart-outline" size={22} color="#FFF" />
+                <Text style={styles.buyButtonText}>Comprar</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        )}
+
         <TouchableOpacity
           style={styles.chatButton}
           onPress={() => router.push('/chat')}
@@ -273,7 +363,7 @@ const styles = StyleSheet.create({
   header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12, backgroundColor: '#F4F9F4', gap: 12 },
   backButton: { padding: 8, borderRadius: 8, backgroundColor: '#E8F5E9' },
   headerTitle: { flex: 1, fontSize: 18, fontWeight: 'bold', color: '#1B5E20' },
-  scrollContent: { paddingBottom: 100 },
+  scrollContent: { paddingBottom: 170 },
   galleryContainer: { width: width, height: 240, backgroundColor: '#E8F5E9', position: 'relative' },
   galleryImage: { width: width, height: 240, resizeMode: 'cover' },
   placeholderGallery: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
@@ -305,7 +395,9 @@ const styles = StyleSheet.create({
   sellerType: { fontSize: 11, fontWeight: 'bold', color: '#2E7D32', marginTop: 4 },
   rateButton: { alignItems: 'center', justifyContent: 'center', backgroundColor: '#FFFDE7', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 8, borderWidth: 1, borderColor: '#F9A825' },
   rateButtonText: { color: '#F57F17', fontSize: 11, fontWeight: 'bold', marginTop: 2 },
-  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFF', paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#E8F5E9', elevation: 8 },
+  footer: { position: 'absolute', bottom: 0, left: 0, right: 0, backgroundColor: '#FFF', paddingHorizontal: 20, paddingVertical: 14, borderTopWidth: 1, borderTopColor: '#E8F5E9', elevation: 8, gap: 10 },
+  buyButton: { backgroundColor: '#1B5E20', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, paddingVertical: 14, borderRadius: 12 },
+  buyButtonText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
   chatButton: { backgroundColor: '#2E7D32', flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 8, paddingVertical: 14, borderRadius: 12 },
   chatButtonText: { color: '#FFF', fontSize: 16, fontWeight: 'bold' },
 });

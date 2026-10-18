@@ -666,6 +666,62 @@ app.put('/coletas/:id/status', (req, res) => {
   });
 });
 
+// --- ROTAS DE TRANSAÇÃO ---
+
+app.post('/transacoes', (req, res) => {
+  const { id_anuncio, id_comprador } = req.body;
+
+  if (!id_anuncio || !id_comprador) {
+    return res.status(400).json({ mensagem: 'Anúncio e comprador são obrigatórios.' });
+  }
+
+  db.query('SELECT id_usuario, preco, status FROM anuncio WHERE id_anuncio = ?', [id_anuncio], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar anúncio:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({ mensagem: 'Anúncio não encontrado.' });
+    }
+
+    const anuncio = results[0];
+
+    if (anuncio.status !== 'ativo') {
+      return res.status(400).json({ mensagem: 'Este anúncio não está mais disponível.' });
+    }
+
+    if (anuncio.id_usuario === Number(id_comprador)) {
+      return res.status(400).json({ mensagem: 'Você não pode comprar o seu próprio anúncio.' });
+    }
+
+    const queryExistente = "SELECT id_transacao FROM transacao WHERE id_anuncio = ? AND id_comprador = ? AND status <> 'cancelada'";
+    db.query(queryExistente, [id_anuncio, id_comprador], (err, existentes) => {
+      if (err) {
+        console.error('Erro ao verificar transação:', err);
+        return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+      }
+
+      if (existentes.length > 0) {
+        return res.status(409).json({ mensagem: 'Você já tem uma compra em andamento para este anúncio.' });
+      }
+
+      const queryInsert = "INSERT INTO transacao (id_anuncio, id_comprador, valor_total, status) VALUES (?, ?, ?, 'pendente')";
+      db.query(queryInsert, [id_anuncio, id_comprador, anuncio.preco], (err, resultado) => {
+        if (err) {
+          console.error('Erro ao criar transação:', err);
+          return res.status(500).json({ mensagem: 'Erro interno ao registrar a compra.' });
+        }
+
+        res.status(201).json({
+          mensagem: 'Compra registrada com sucesso!',
+          id_transacao: resultado.insertId
+        });
+      });
+    });
+  });
+});
+
 app.listen(3000, '0.0.0.0', () => {
   console.log('Servidor rodando na porta 3000');
 });
