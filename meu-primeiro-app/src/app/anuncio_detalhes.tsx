@@ -240,14 +240,6 @@ export default function DetalhesAnuncioScreen() {
               ) : null}
             </View>
 
-            <TouchableOpacity
-              style={styles.rateButton}
-              onPress={() => router.push('/avaliacao' as any)}
-              activeOpacity={0.7}
-            >
-              <MaterialCommunityIcons name="star" size={22} color="#F9A825" />
-              <Text style={styles.rateButtonText}>Avaliar</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -255,7 +247,7 @@ export default function DetalhesAnuncioScreen() {
       <View style={styles.footer}>
         <TouchableOpacity
           style={styles.chatButton}
-          onPress={() => router.push('/chat')}
+          onPress={() => router.push({ pathname: '/chat', params: { id_anuncio: anuncio.id_anuncio, id_vendedor: anuncio.id_usuario } })}
           activeOpacity={0.8}
         >
           <MaterialCommunityIcons name="message-text-outline" size={22} color="#FFF" />

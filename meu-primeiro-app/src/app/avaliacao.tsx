@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,21 +12,70 @@ import {
   SafeAreaView
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config/api';
 
 export default function AvaliacaoScreen() {
   const router = useRouter();
+  const { id_transacao, id_avaliado } = useLocalSearchParams<{
+    id_transacao: string;
+    id_avaliado: string;
+  }>();
+
   const [nota, setNota] = useState(0);
   const [comentario, setComentario] = useState('');
   const [loading, setLoading] = useState(false);
+  const [userId, setUserId] = useState<number | null>(null);
+  const [nomeAvaliado, setNomeAvaliado] = useState('');
 
-  // Nome fictício do vendedor/comprador para a interface
-  const nomeUsuarioAvaliado = "João (Catador)"; 
+  const avisar = (titulo: string, msg: string, onOk?: () => void) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${titulo}\n${msg}`);
+      onOk?.();
+    } else {
+      Alert.alert(titulo, msg, [{ text: 'OK', onPress: onOk }]);
+    }
+  };
+
+  const voltar = () => {
+    if (router.canGoBack()) router.back();
+    else router.push('/transacoes');
+  };
+
+  // Usuário logado
+  useEffect(() => {
+    const carregarUsuario = async () => {
+      const salvo = await AsyncStorage.getItem('@usuario_logado');
+      if (salvo) setUserId(JSON.parse(salvo).id_usuario);
+    };
+    carregarUsuario();
+  }, []);
+
+  // Nome de quem está sendo avaliado
+  useEffect(() => {
+    if (!id_avaliado) return;
+    const carregarNome = async () => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/usuario/${id_avaliado}`);
+        if (r.ok) {
+          const u = await r.json();
+          setNomeAvaliado(u.usuario_nome);
+        }
+      } catch (e) {
+        console.error('Erro ao carregar usuário avaliado:', e);
+      }
+    };
+    carregarNome();
+  }, [id_avaliado]);
 
   const handleAvaliar = async () => {
     if (nota === 0) {
-      Alert.alert('Atenção', 'Por favor, selecione uma nota de 1 a 5 estrelas.');
+      avisar('Atenção', 'Por favor, selecione uma nota de 1 a 5 estrelas.');
+      return;
+    }
+    if (!userId || !id_transacao || !id_avaliado) {
+      avisar('Erro', 'Abra a avaliação pela tela de Transações.');
       return;
     }
 
@@ -35,37 +84,28 @@ export default function AvaliacaoScreen() {
     try {
       const response = await fetch(`${API_BASE_URL}/avaliacoes`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id_transacao: 1, 
-          id_avaliador: 1, 
-          id_avaliado: 1,  
-          nota: nota,
-          comentario: comentario,
+          id_transacao: Number(id_transacao),
+          id_avaliador: userId,
+          id_avaliado: Number(id_avaliado),
+          nota,
+          comentario,
         }),
       });
 
+      const resp = await response.json();
+
       if (response.ok) {
-        if (Platform.OS === 'web') {
-          window.alert('Sucesso! A sua avaliação foi enviada com sucesso.');
-          router.push('/anuncio_listagem');
-        } else {
-          Alert.alert('Sucesso!', 'A sua avaliação foi enviada com sucesso.', [
-            { 
-              text: 'OK', 
-              onPress: () => router.push('/anuncio_listagem')
-            }
-          ]);
-        }
+        avisar('Sucesso!', 'Sua avaliação foi enviada com sucesso.', () =>
+          router.push('/transacoes')
+        );
       } else {
-        const errorData = await response.json();
-        throw new Error(errorData.mensagem || 'Falha ao enviar avaliação');
+        avisar('Atenção', resp.mensagem || 'Não foi possível enviar a avaliação.');
       }
     } catch (error) {
       console.error(error);
-      Alert.alert('Erro', 'Não foi possível enviar a avaliação. Tente novamente.');
+      avisar('Erro', 'Erro ao conectar com o servidor.');
     } finally {
       setLoading(false);
     }
@@ -94,16 +134,7 @@ export default function AvaliacaoScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.container}
       >
-          <TouchableOpacity 
-            style={styles.backButton} 
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.push('/anuncio_listagem');
-              }
-            }}
-          >
+        <TouchableOpacity style={styles.backButton} onPress={voltar}>
           <MaterialCommunityIcons name="arrow-left" size={24} color="#1B5E20" />
         </TouchableOpacity>
 
@@ -113,7 +144,9 @@ export default function AvaliacaoScreen() {
               <MaterialCommunityIcons name="account-star" size={50} color="#2E7D32" />
             </View>
             <Text style={styles.title}>Avaliar Transação</Text>
-            <Text style={styles.subtitle}>Como foi sua experiência com {nomeUsuarioAvaliado}?</Text>
+            <Text style={styles.subtitle}>
+              Como foi sua experiência com {nomeAvaliado || '...'}?
+            </Text>
           </View>
 
           {renderStars()}
@@ -135,8 +168,8 @@ export default function AvaliacaoScreen() {
             />
           </View>
 
-          <TouchableOpacity 
-            style={[styles.button, nota === 0 && styles.buttonDisabled]} 
+          <TouchableOpacity
+            style={[styles.button, nota === 0 && styles.buttonDisabled]}
             onPress={handleAvaliar}
             disabled={loading || nota === 0}
           >
