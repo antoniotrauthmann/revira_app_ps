@@ -1,7 +1,7 @@
 import { Platform } from 'react-native';
 
 // Altere para o IP da sua máquina se estiver testando no celular físico (Expo Go)
-const LOCAL_IP = '192.168.1.14';
+const LOCAL_IP = '192.168.1.7';
 const LOCAL_PORT = '3000';
 
 

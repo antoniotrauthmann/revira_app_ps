@@ -160,7 +160,12 @@ export default function ProfileScreen() {
   };
 
   const handleVoltar = () => {
-    router.back();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      // Se não houver histórico, volta forçosamente para a tela principal (home)
+      router.replace('/home' as any); 
+    }
   };
 
   // Formata o tipo de usuário para exibição
@@ -263,11 +268,27 @@ export default function ProfileScreen() {
           />
           <View style={styles.menuDivider} />
           <MenuItem
+            icon="heart-outline"
+            iconColor="#D32F2F"
+            label="Meus Favoritos"
+            subtitle="Anúncios salvos para depois"
+            onPress={() => router.push('/favoritos')}
+          />
+          <View style={styles.menuDivider} />
+          <MenuItem
             icon="star-outline"
             iconColor="#F9A825"
             label="Minhas Avaliações"
             subtitle="Veja o que dizem sobre você"
             onPress={() => router.push('/minhas_avaliacoes')} 
+          />
+          <View style={styles.menuDivider} />
+          <MenuItem
+            icon="gift-outline"
+            iconColor="#F57C00"
+            label="Minhas Recompensas"
+            subtitle="Troque seus EcoPontos por benefícios"
+            onPress={() => router.push('/recompensas' as any)}
           />
         </View>
 

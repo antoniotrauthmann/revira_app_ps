@@ -49,6 +49,7 @@ export default function DetalhesAnuncioScreen() {
   const [imagemAtiva, setImagemAtiva] = useState(0);
   const [idUsuario, setIdUsuario] = useState<number | null>(null);
   const [comprando, setComprando] = useState(false);
+  const [favoritado, setFavoritado] = useState(false);
 
   const carregarDetalhes = useCallback(async () => {
     if (!idAnuncio) return;
@@ -70,9 +71,61 @@ export default function DetalhesAnuncioScreen() {
     }
   }, [idAnuncio, router]);
 
+  const carregarStatusFavorito = useCallback(async () => {
+    try {
+      const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+      if (!dadosSalvos || !idAnuncio) return;
+
+      const usuario = JSON.parse(dadosSalvos);
+      const response = await fetch(`${API_BASE_URL}/favoritos/${usuario.id_usuario}/${idAnuncio}`);
+
+      if (response.ok) {
+        const data = await response.json();
+        setFavoritado(data.favoritado);
+      }
+    } catch (error) {
+      console.error('Erro ao verificar favorito:', error);
+    }
+  }, [idAnuncio]);
+
+  const toggleFavorito = async () => {
+    try {
+      const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+
+      if (!dadosSalvos) {
+        Alert.alert('Atenção', 'Faça login para salvar favoritos.');
+        return;
+      }
+
+      const usuario = JSON.parse(dadosSalvos);
+      const response = await fetch(`${API_BASE_URL}/favoritos`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id_usuario: usuario.id_usuario,
+          id_anuncio: idAnuncio,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.mensagem || 'Erro ao atualizar favorito');
+      }
+
+      setFavoritado(Boolean(data.favoritado));
+    } catch (error) {
+      console.error('Erro ao atualizar favorito:', error);
+      Alert.alert('Erro', 'Não foi possível atualizar esse anúncio nos favoritos.');
+    }
+  };
+
   useEffect(() => {
     carregarDetalhes();
-  }, [carregarDetalhes]);
+    carregarStatusFavorito();
+  }, [carregarDetalhes, carregarStatusFavorito]);
 
   useEffect(() => {
   carregarUsuarioLogado();
@@ -186,6 +239,17 @@ const handleComprar = () => {
         <Text style={styles.headerTitle} numberOfLines={1}>
           {anuncio.anuncio_titulo}
         </Text>
+        <TouchableOpacity
+          style={[styles.favoriteToggle, favoritado && styles.favoriteToggleActive]}
+          onPress={toggleFavorito}
+          activeOpacity={0.8}
+        >
+          <MaterialCommunityIcons
+            name={favoritado ? 'heart' : 'heart-outline'}
+            size={20}
+            color={favoritado ? '#D32F2F' : '#2E7D32'}
+          />
+        </TouchableOpacity>
       </View>
 
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -312,14 +376,6 @@ const handleComprar = () => {
               ) : null}
             </View>
 
-            <TouchableOpacity
-              style={styles.rateButton}
-              onPress={() => router.push('/avaliacao' as any)}
-              activeOpacity={0.7}
-            >
-              <MaterialCommunityIcons name="star" size={22} color="#F9A825" />
-              <Text style={styles.rateButtonText}>Avaliar</Text>
-            </TouchableOpacity>
           </View>
         </View>
       </ScrollView>
@@ -345,7 +401,7 @@ const handleComprar = () => {
 
         <TouchableOpacity
           style={styles.chatButton}
-          onPress={() => router.push('/chat')}
+          onPress={() => router.push({ pathname: '/chat', params: { id_anuncio: anuncio.id_anuncio, id_vendedor: anuncio.id_usuario } })}
           activeOpacity={0.8}
         >
           <MaterialCommunityIcons name="message-text-outline" size={22} color="#FFF" />
@@ -364,6 +420,18 @@ const styles = StyleSheet.create({
   backButton: { padding: 8, borderRadius: 8, backgroundColor: '#E8F5E9' },
   headerTitle: { flex: 1, fontSize: 18, fontWeight: 'bold', color: '#1B5E20' },
   scrollContent: { paddingBottom: 170 },
+  favoriteToggle: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#E8F5E9',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  favoriteToggleActive: {
+    backgroundColor: '#FDECEC',
+  },
+  scrollContent: { paddingBottom: 100 },
   galleryContainer: { width: width, height: 240, backgroundColor: '#E8F5E9', position: 'relative' },
   galleryImage: { width: width, height: 240, resizeMode: 'cover' },
   placeholderGallery: { width: '100%', height: '100%', justifyContent: 'center', alignItems: 'center' },
