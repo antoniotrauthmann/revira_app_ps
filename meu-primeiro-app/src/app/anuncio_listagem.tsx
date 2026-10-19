@@ -1,8 +1,10 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter } from 'expo-router';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   FlatList,
   Image,
   Platform,
@@ -39,15 +41,33 @@ export default function AnunciosScreen() {
   const router = useRouter();
   const { width } = useWindowDimensions();
 
-  // Estados originais mantidos
+  // Estados principais
   const [anuncios, setAnuncios] = useState<Anuncio[]>([]);
+  const [favoritos, setFavoritos] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busca, setBusca] = useState('');
   const [categoriaSelecionada, setCategoriaSelecionada] = useState('Todos');
 
-  // Estado interativo para Favoritos
-  const [favoritos, setFavoritos] = useState<number[]>([]);
+  // Referência para animação de pulso no botão de favorito
+  const buttonPulseRefs = useRef<Record<number, Animated.Value>>({});
+
+  const triggerButtonPulse = (idAnuncio: number) => {
+    const pulse = buttonPulseRefs.current[idAnuncio] || (buttonPulseRefs.current[idAnuncio] = new Animated.Value(1));
+
+    Animated.sequence([
+      Animated.timing(pulse, {
+        toValue: 1.35,
+        duration: 110,
+        useNativeDriver: true,
+      }),
+      Animated.timing(pulse, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
 
   // Cálculo de colunas responsivas para Celular vs Desktop
   const numColumns = useMemo(() => {
@@ -74,19 +94,77 @@ export default function AnunciosScreen() {
     }
   }, []);
 
+  const carregarFavoritos = useCallback(async () => {
+    try {
+      const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+      if (!dadosSalvos) {
+        setFavoritos([]);
+        return;
+      }
+
+      const usuario = JSON.parse(dadosSalvos);
+      const response = await fetch(`${API_BASE_URL}/favoritos/${usuario.id_usuario}`);
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+      setFavoritos(data.map((item: { id_anuncio: number }) => item.id_anuncio));
+    } catch (error) {
+      console.error('Erro ao buscar favoritos:', error);
+    }
+  }, []);
+
   useEffect(() => {
     carregarAnuncios();
-  }, [carregarAnuncios]);
+    carregarFavoritos();
+  }, [carregarAnuncios, carregarFavoritos]);
+
+  const toggleFavorito = async (idAnuncio: number) => {
+    try {
+      const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+
+      if (!dadosSalvos) {
+        if (Platform.OS === 'web') {
+          alert('Faça login para salvar favoritos.');
+        }
+        return;
+      }
+
+      const usuario = JSON.parse(dadosSalvos);
+      const response = await fetch(`${API_BASE_URL}/favoritos`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id_usuario: usuario.id_usuario,
+          id_anuncio: idAnuncio,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.mensagem || 'Erro ao atualizar favorito');
+      }
+
+      triggerButtonPulse(idAnuncio);
+      setFavoritos((prev) =>
+        data.favoritado ? [...new Set([...prev, idAnuncio])] : prev.filter((id) => id !== idAnuncio)
+      );
+    } catch (error) {
+      console.error('Erro ao favoritar anúncio:', error);
+      if (Platform.OS === 'web') {
+        alert('Não foi possível atualizar o favorito.');
+      }
+    }
+  };
 
   const onRefresh = () => {
     setRefreshing(true);
     carregarAnuncios();
-  };
-
-  const toggleFavorito = (id: number) => {
-    setFavoritos((prev) =>
-      prev.includes(id) ? prev.filter((favId) => favId !== id) : [...prev, id]
-    );
   };
 
   const getCategoryIcon = (categoria: string) => {
@@ -123,7 +201,8 @@ export default function AnunciosScreen() {
   });
 
   const renderItem = ({ item }: { item: Anuncio }) => {
-    const isFavorito = favoritos.includes(item.id_anuncio);
+    const estaFavoritado = favoritos.includes(item.id_anuncio);
+    const pulse = buttonPulseRefs.current[item.id_anuncio] || (buttonPulseRefs.current[item.id_anuncio] = new Animated.Value(1));
 
     return (
       <View style={[styles.cardWrapper, { width: numColumns > 1 ? `${100 / numColumns}%` : '100%' }]}>
@@ -152,18 +231,20 @@ export default function AnunciosScreen() {
               <Text style={styles.categoryBadgeText}>{item.categoria}</Text>
             </View>
 
-            {/* Botão Favoritar */}
-            <TouchableOpacity
-              style={styles.favoriteButton}
-              activeOpacity={0.8}
-              onPress={() => toggleFavorito(item.id_anuncio)}
-            >
-              <MaterialCommunityIcons
-                name={isFavorito ? 'heart' : 'heart-outline'}
-                size={18}
-                color={isFavorito ? '#EF4444' : '#475569'}
-              />
-            </TouchableOpacity>
+            {/* Botão Favoritar Animado */}
+            <Animated.View style={[styles.favoriteButtonWrap, { transform: [{ scale: pulse }] }]}>
+              <TouchableOpacity
+                style={[styles.favoriteButton, estaFavoritado && styles.favoriteButtonFavoritado]}
+                activeOpacity={0.8}
+                onPress={() => toggleFavorito(item.id_anuncio)}
+              >
+                <MaterialCommunityIcons
+                  name={estaFavoritado ? 'heart' : 'heart-outline'}
+                  size={18}
+                  color={estaFavoritado ? '#EF4444' : '#475569'}
+                />
+              </TouchableOpacity>
+            </Animated.View>
           </View>
 
           {/* Corpo do Card */}
@@ -220,7 +301,7 @@ export default function AnunciosScreen() {
               {/* Botão Contato */}
               <TouchableOpacity
                 style={styles.chatButton}
-                onPress={() => router.push('/chat')}
+                onPress={() => router.push({ pathname: '/chat', params: { id_anuncio: item.id_anuncio, id_vendedor: item.id_usuario } })}
                 activeOpacity={0.8}
               >
                 <MaterialCommunityIcons name="message-text-outline" size={14} color="#FFF" />
@@ -439,7 +520,7 @@ const styles = StyleSheet.create({
     paddingTop: 4,
   },
   columnWrapper: {
-    justifyContent: 'flex-start',
+    justify: 'flex-start',
     gap: 20,
   },
   cardWrapper: {
@@ -503,15 +584,21 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: '700',
   },
-  favoriteButton: {
+  favoriteButtonWrap: {
     position: 'absolute',
     top: 12,
     right: 12,
+    zIndex: 2,
+  },
+  favoriteButton: {
     backgroundColor: 'rgba(255, 255, 255, 0.92)',
     padding: 8,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  favoriteButtonFavoritado: {
+    backgroundColor: '#FEE2E2',
   },
   cardBody: {
     padding: 18,

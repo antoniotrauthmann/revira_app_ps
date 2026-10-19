@@ -1,9 +1,10 @@
+require('dotenv').config();
 const express = require('express');
 const mysql = require('mysql2');
 const cors = require('cors');
 const crypto = require('crypto');
 const bcrypt = require('bcrypt');
-const { enviarCodigoRecuperacao } = require('./email');
+const { enviarCodigoRecuperacao, enviarCupomRecompensa } = require('./email');
 
 const app = express();
 app.use(cors());
@@ -16,7 +17,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const db = mysql.createConnection({
   host: 'localhost',
   user: 'root',      
-  port: 3307,
+  port: 3306,
   password: '',      
   database: 'marketplace'
 });
@@ -278,7 +279,7 @@ app.post('/anuncios', (req, res) => {
   );
 });
 
-// --- ROTAS DE MATERIAIS ---
+// --- ROTAS DE MATERIAIS E FAVORITOS ---
 
 app.get('/materiais', (req, res) => {
   db.query('SELECT id_material, material_nome, categoria, unidade_medida FROM material ORDER BY material_nome ASC', (err, results) => {
@@ -287,6 +288,110 @@ app.get('/materiais', (req, res) => {
       return res.status(500).json({ mensagem: 'Erro interno ao buscar materiais.' });
     }
     res.json(results);
+  });
+});
+
+app.get('/favoritos/:id_usuario', (req, res) => {
+  const { id_usuario } = req.params;
+
+  const query = `
+    SELECT
+      f.id_favorito,
+      f.criado_em AS favorito_em,
+      a.id_anuncio,
+      a.anuncio_titulo,
+      a.descricao,
+      a.quantidade,
+      a.preco,
+      a.status,
+      a.criado_em,
+      m.material_nome,
+      m.categoria,
+      m.unidade_medida,
+      u.id_usuario,
+      u.usuario_nome AS vendedor_nome,
+      (
+        SELECT img.anuncio_caminho_imagem
+        FROM imagens_anuncio img
+        WHERE img.id_anuncio = a.id_anuncio
+        ORDER BY img.ordem ASC LIMIT 1
+      ) AS imagem_capa
+    FROM favorito f
+    INNER JOIN anuncio a ON a.id_anuncio = f.id_anuncio
+    INNER JOIN material m ON m.id_material = a.id_material
+    INNER JOIN usuario u ON u.id_usuario = a.id_usuario
+    WHERE f.id_usuario = ?
+    ORDER BY f.criado_em DESC
+  `;
+
+  db.query(query, [id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar favoritos:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao buscar favoritos.' });
+    }
+
+    res.json(results);
+  });
+});
+
+app.get('/favoritos/:id_usuario/:id_anuncio', (req, res) => {
+  const { id_usuario, id_anuncio } = req.params;
+
+  const query = 'SELECT id_favorito FROM favorito WHERE id_usuario = ? AND id_anuncio = ? LIMIT 1';
+
+  db.query(query, [id_usuario, id_anuncio], (err, results) => {
+    if (err) {
+      console.error('Erro ao verificar favorito:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao verificar favorito.' });
+    }
+
+    res.json({ favoritado: results.length > 0 });
+  });
+});
+
+app.post('/favoritos', (req, res) => {
+  const { id_usuario, id_anuncio } = req.body;
+
+  if (!id_usuario || !id_anuncio) {
+    return res.status(400).json({ mensagem: 'Usuário e anúncio são obrigatórios.' });
+  }
+
+  const checkQuery = 'SELECT id_favorito FROM favorito WHERE id_usuario = ? AND id_anuncio = ? LIMIT 1';
+
+  db.query(checkQuery, [id_usuario, id_anuncio], (err, results) => {
+    if (err) {
+      console.error('Erro ao verificar favorito existente:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao atualizar favorito.' });
+    }
+
+    if (results.length > 0) {
+      const deleteQuery = 'DELETE FROM favorito WHERE id_favorito = ?';
+      return db.query(deleteQuery, [results[0].id_favorito], (deleteErr) => {
+        if (deleteErr) {
+          console.error('Erro ao remover favorito:', deleteErr);
+          return res.status(500).json({ mensagem: 'Erro ao remover favorito.' });
+        }
+
+        return res.status(200).json({
+          mensagem: 'Anúncio removido dos favoritos.',
+          favoritado: false,
+        });
+      });
+    }
+
+    const insertQuery = 'INSERT INTO favorito (id_usuario, id_anuncio) VALUES (?, ?)';
+    db.query(insertQuery, [id_usuario, id_anuncio], (insertErr, insertResults) => {
+      if (insertErr) {
+        console.error('Erro ao salvar favorito:', insertErr);
+        return res.status(500).json({ mensagem: 'Erro ao salvar favorito.' });
+      }
+
+      res.status(201).json({
+        mensagem: 'Anúncio adicionado aos favoritos.',
+        favoritado: true,
+        id_favorito: insertResults.insertId,
+      });
+    });
   });
 });
 
@@ -364,47 +469,66 @@ app.delete('/endereco/:id', (req, res) => {
   });
 });
 
-// --- ROTAS DE MENSAGENS (CHAT) ---
-
-app.get('/mensagens', (req, res) => {
-  const query = 'SELECT id_mensagem, id_remetente, id_destinatario, conteudo, lida, enviado_em, url_imagem FROM mensagem ORDER BY enviado_em ASC';
-  
-  db.query(query, (err, results) => {
-    if (err) {
-      console.error('Erro ao buscar mensagens:', err);
-      return res.status(500).json({ error: err.message });
-    }
-    res.json(results);
-  });
-});
-
-app.post('/mensagens', (req, res) => {
-  const { conteudo, id_remetente, id_destinatario, url_imagem } = req.body;
-
-  const query = 'INSERT INTO mensagem (conteudo, id_remetente, id_destinatario, url_imagem) VALUES (?, ?, ?, ?)';
-  
-  db.query(query, [conteudo, id_remetente, id_destinatario, url_imagem || null], (err, results) => {
-    if (err) {
-      console.error('Erro ao salvar mensagem:', err);
-      return res.status(500).json({ mensagem: 'Erro interno ao salvar mensagem.' });
-    }
-    res.status(201).json({ mensagem: 'Mensagem salva com sucesso', id: results.insertId });
-  });
-});
-
 // --- ROTAS DE AVALIAÇÕES ---
 
 app.post('/avaliacoes', (req, res) => {
   const { id_transacao, id_avaliador, id_avaliado, nota, comentario } = req.body;
 
-  const query = 'INSERT INTO avaliacao (id_transacao, id_avaliador, id_avaliado, nota, comentario) VALUES (?, ?, ?, ?, ?)';
-  
-  db.query(query, [id_transacao, id_avaliador, id_avaliado, nota, comentario], (err, results) => {
+  if (!id_transacao || !id_avaliador || !id_avaliado || !nota) {
+    return res.status(400).json({ mensagem: 'Dados incompletos.' });
+  }
+  if (Number(nota) < 1 || Number(nota) > 5) {
+    return res.status(400).json({ mensagem: 'A nota deve ser de 1 a 5.' });
+  }
+  if (Number(id_avaliador) === Number(id_avaliado)) {
+    return res.status(400).json({ mensagem: 'Você não pode se autoavaliar.' });
+  }
+
+  const busca = `
+    SELECT t.status, t.id_comprador, a.id_usuario AS id_vendedor
+    FROM transacao t
+    JOIN anuncio a ON a.id_anuncio = t.id_anuncio
+    WHERE t.id_transacao = ?
+  `;
+  db.query(busca, [id_transacao], (err, rows) => {
     if (err) {
-      console.error('Erro ao salvar avaliação:', err);
-      return res.status(500).json({ mensagem: 'Erro ao processar avaliação.' });
+      console.error('Erro ao buscar transação:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
     }
-    res.status(201).json({ mensagem: 'Avaliação salva com sucesso!' });
+    if (rows.length === 0) return res.status(404).json({ mensagem: 'Transação não encontrada.' });
+
+    const t = rows[0];
+    const participantes = [Number(t.id_comprador), Number(t.id_vendedor)];
+
+    if (t.status !== 'concluida') {
+      return res.status(400).json({ mensagem: 'Só é possível avaliar transações concluídas.' });
+    }
+    if (!participantes.includes(Number(id_avaliador)) || !participantes.includes(Number(id_avaliado))) {
+      return res.status(403).json({ mensagem: 'Avaliador e avaliado precisam participar da transação.' });
+    }
+
+    db.query(
+      'SELECT 1 FROM avaliacao WHERE id_transacao = ? AND id_avaliador = ?',
+      [id_transacao, id_avaliador],
+      (err, dup) => {
+        if (err) {
+          console.error('Erro ao verificar avaliação:', err);
+          return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+        }
+        if (dup.length > 0) {
+          return res.status(409).json({ mensagem: 'Você já avaliou esta transação.' });
+        }
+
+        const insert = 'INSERT INTO avaliacao (id_transacao, id_avaliador, id_avaliado, nota, comentario) VALUES (?, ?, ?, ?, ?)';
+        db.query(insert, [id_transacao, id_avaliador, id_avaliado, nota, comentario || null], (err) => {
+          if (err) {
+            console.error('Erro ao salvar avaliação:', err);
+            return res.status(500).json({ mensagem: 'Erro ao processar avaliação.' });
+          }
+          res.status(201).json({ mensagem: 'Avaliação salva com sucesso!' });
+        });
+      }
+    );
   });
 });
 
@@ -575,6 +699,499 @@ app.post('/usuario/redefinir_senha', async (req, res) => {
       console.error('Erro ao gerar hash da senha:', hashError);
       return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
     }
+  });
+});
+
+// --- ROTAS DE COLETA ---
+
+app.get('/coletas/usuario/:id_usuario', (req, res) => {
+  const { id_usuario } = req.params;
+  const query = `
+    SELECT c.id_coleta, c.data_coleta, c.status, a.anuncio_titulo, a.quantidade,
+      m.material_nome, m.unidade_medida, e.logradouro, e.cidade, e.estado
+    FROM coleta c
+    INNER JOIN transacao t ON c.id_transacao = t.id_transacao
+    INNER JOIN anuncio a ON t.id_anuncio = a.id_anuncio
+    INNER JOIN material m ON a.id_material = m.id_material
+    LEFT JOIN endereco e ON c.id_endereco = e.id_endereco
+    WHERE t.id_comprador = ? OR a.id_usuario = ?
+    ORDER BY c.id_coleta DESC
+  `;
+
+  db.query(query, [id_usuario, id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar coletas:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao buscar coletas.' });
+    }
+    res.json(results);
+  });
+});
+
+app.get('/transacoes/usuario/:id_usuario/disponiveis', (req, res) => {
+  const { id_usuario } = req.params;
+  const query = `
+    SELECT t.id_transacao, a.anuncio_titulo, m.material_nome
+    FROM transacao t
+    INNER JOIN anuncio a ON t.id_anuncio = a.id_anuncio
+    INNER JOIN material m ON a.id_material = m.id_material
+    LEFT JOIN coleta c ON c.id_transacao = t.id_transacao
+    WHERE c.id_coleta IS NULL AND (t.id_comprador = ? OR a.id_usuario = ?)
+    ORDER BY t.id_transacao DESC
+  `;
+
+  db.query(query, [id_usuario, id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar transações:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+    res.json(results);
+  });
+});
+
+app.post('/coletas', (req, res) => {
+  const { id_transacao, id_endereco, data_coleta } = req.body;
+
+  if (!id_transacao || !id_endereco || !data_coleta) {
+    return res.status(400).json({ mensagem: 'Transação, endereço e data são obrigatórios.' });
+  }
+
+  const query = "INSERT INTO coleta (id_transacao, id_endereco, data_coleta, status) VALUES (?, ?, ?, 'agendada')";
+
+  db.query(query, [id_transacao, id_endereco, data_coleta], (err, results) => {
+    if (err) {
+      if (err.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({ mensagem: 'Esta transação já tem uma coleta.' });
+      }
+      console.error('Erro ao agendar coleta:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao agendar coleta.' });
+    }
+    res.status(201).json({ mensagem: 'Coleta agendada com sucesso!', id_coleta: results.insertId });
+  });
+});
+
+app.put('/coletas/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const statusValidos = ['agendada', 'em_andamento', 'concluida', 'cancelada'];
+  if (!statusValidos.includes(status)) {
+    return res.status(400).json({ mensagem: 'Status inválido.' });
+  }
+
+  db.query('UPDATE coleta SET status = ? WHERE id_coleta = ?', [status, id], (err, results) => {
+    if (err) {
+      console.error('Erro ao atualizar coleta:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao atualizar coleta.' });
+    }
+    if (results.affectedRows === 0) {
+      return res.status(404).json({ mensagem: 'Coleta não encontrada.' });
+    }
+    res.json({ mensagem: 'Status atualizado com sucesso!' });
+  });
+});
+
+// --- ROTAS DE MENSAGENS (CHAT) ---
+
+app.get('/mensagens', (req, res) => {
+  const { id_anuncio, id_usuario, id_outro } = req.query;
+
+  if (!id_anuncio || !id_usuario || !id_outro) {
+    return res.status(400).json({ mensagem: 'id_anuncio, id_usuario e id_outro são obrigatórios.' });
+  }
+
+  const query = `
+    SELECT m.id_mensagem, m.id_remetente, m.id_destinatario, m.conteudo, m.lida,
+           m.enviado_em, m.url_imagem, m.id_proposta,
+           p.endereco AS proposta_endereco,
+           p.data_hora AS proposta_data_hora,
+           p.quantidade AS proposta_quantidade,
+           p.status AS proposta_status,
+           p.id_proponente AS proposta_proponente
+    FROM mensagem m
+    LEFT JOIN proposta p ON p.id_proposta = m.id_proposta
+    WHERE m.id_anuncio = ?
+      AND ((m.id_remetente = ? AND m.id_destinatario = ?)
+        OR (m.id_remetente = ? AND m.id_destinatario = ?))
+    ORDER BY m.enviado_em ASC, m.id_mensagem ASC
+  `;
+
+  db.query(query, [id_anuncio, id_usuario, id_outro, id_outro, id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar mensagens:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao buscar mensagens.' });
+    }
+    res.json(results);
+  });
+});
+
+app.post('/mensagens', (req, res) => {
+  const { conteudo, id_remetente, id_destinatario, id_anuncio, url_imagem } = req.body;
+
+  if (!id_remetente || !id_anuncio) {
+    return res.status(400).json({ mensagem: 'Remetente e anúncio são obrigatórios.' });
+  }
+
+  db.query('SELECT id_usuario FROM anuncio WHERE id_anuncio = ?', [id_anuncio], (err, rows) => {
+    if (err) {
+      console.error('Erro ao buscar anúncio:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+    if (rows.length === 0) {
+      return res.status(404).json({ mensagem: 'Anúncio não encontrado.' });
+    }
+
+    const idVendedor = Number(rows[0].id_usuario);
+
+    const destinatario =
+      Number(id_remetente) === idVendedor ? Number(id_destinatario) : idVendedor;
+
+    if (!destinatario) {
+      return res.status(400).json({ mensagem: 'Informe o comprador ao responder como vendedor.' });
+    }
+    if (destinatario === Number(id_remetente)) {
+      return res.status(400).json({ mensagem: 'Você não pode enviar mensagem para si mesmo.' });
+    }
+
+    const query = 'INSERT INTO mensagem (conteudo, id_remetente, id_destinatario, id_anuncio, url_imagem) VALUES (?, ?, ?, ?, ?)';
+    db.query(query, [conteudo || '', id_remetente, destinatario, id_anuncio, url_imagem || null], (err, results) => {
+      if (err) {
+        console.error('Erro ao salvar mensagem:', err);
+        return res.status(500).json({ mensagem: 'Erro interno ao salvar mensagem.' });
+      }
+      res.status(201).json({ mensagem: 'Mensagem salva com sucesso', id: results.insertId });
+    });
+  });
+});
+
+app.get('/conversas', (req, res) => {
+  const { id_usuario } = req.query;
+  if (!id_usuario) {
+    return res.status(400).json({ mensagem: 'id_usuario é obrigatório.' });
+  }
+
+  const query = `
+    SELECT m.id_anuncio, a.anuncio_titulo,
+           CASE WHEN m.id_remetente = ? THEN m.id_destinatario ELSE m.id_remetente END AS id_outro,
+           u.usuario_nome AS outro_nome,
+           m.conteudo, m.url_imagem, m.id_proposta, m.enviado_em
+    FROM mensagem m
+    JOIN (
+      SELECT id_anuncio,
+             LEAST(id_remetente, id_destinatario) AS u1,
+             GREATEST(id_remetente, id_destinatario) AS u2,
+             MAX(id_mensagem) AS ultima
+      FROM mensagem
+      WHERE id_anuncio IS NOT NULL AND (id_remetente = ? OR id_destinatario = ?)
+      GROUP BY id_anuncio, u1, u2
+    ) ult ON ult.ultima = m.id_mensagem
+    JOIN anuncio a ON a.id_anuncio = m.id_anuncio
+    JOIN usuario u ON u.id_usuario =
+      CASE WHEN m.id_remetente = ? THEN m.id_destinatario ELSE m.id_remetente END
+    ORDER BY m.enviado_em DESC
+  `;
+
+  db.query(query, [id_usuario, id_usuario, id_usuario, id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar conversas:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao buscar conversas.' });
+    }
+    res.json(results);
+  });
+});
+
+// --- ROTAS DE PROPOSTAS E TRANSAÇÕES ---
+
+app.post('/propostas', (req, res) => {
+  const { id_anuncio, id_proponente, id_destinatario, endereco, data_hora, quantidade } = req.body;
+
+  if (!id_anuncio || !id_proponente || !id_destinatario || !endereco || !data_hora || !quantidade) {
+    return res.status(400).json({ mensagem: 'Preencha endereço, data, horário e quantidade.' });
+  }
+
+  if (Number(id_proponente) === Number(id_destinatario)) {
+    return res.status(400).json({ mensagem: 'Você não pode fazer acordo consigo mesmo.' });
+  }
+
+  db.query('SELECT id_usuario, quantidade, status FROM anuncio WHERE id_anuncio = ?', [id_anuncio], (err, rows) => {
+    if (err) {
+      console.error('Erro ao buscar anúncio:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+    if (rows.length === 0) return res.status(404).json({ mensagem: 'Anúncio não encontrado.' });
+
+    const anuncio = rows[0];
+
+    if (anuncio.status !== 'ativo') {
+      return res.status(400).json({ mensagem: 'Este anúncio não está mais ativo.' });
+    }
+    if (![Number(id_proponente), Number(id_destinatario)].includes(Number(anuncio.id_usuario))) {
+      return res.status(400).json({ mensagem: 'Participantes inválidos para este anúncio.' });
+    }
+    if (Number(quantidade) <= 0 || Number(quantidade) > Number(anuncio.quantidade)) {
+      return res.status(400).json({ mensagem: `Quantidade inválida. O anúncio tem ${anuncio.quantidade} disponível.` });
+    }
+
+    const insertProposta = `
+      INSERT INTO proposta (id_anuncio, id_proponente, id_destinatario, endereco, data_hora, quantidade)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    db.query(insertProposta, [id_anuncio, id_proponente, id_destinatario, endereco.trim(), data_hora, quantidade], (err, result) => {
+      if (err) {
+        console.error('Erro ao criar proposta:', err);
+        return res.status(500).json({ mensagem: 'Erro interno ao criar proposta.' });
+      }
+
+      const id_proposta = result.insertId;
+      const insertMsg = `
+        INSERT INTO mensagem (conteudo, id_remetente, id_destinatario, id_anuncio, id_proposta)
+        VALUES ('Proposta de acordo', ?, ?, ?, ?)
+      `;
+      db.query(insertMsg, [id_proponente, id_destinatario, id_anuncio, id_proposta], (err) => {
+        if (err) {
+          console.error('Erro ao criar mensagem da proposta:', err);
+          return res.status(500).json({ mensagem: 'Erro interno ao enviar proposta.' });
+        }
+        res.status(201).json({ mensagem: 'Proposta enviada!', id_proposta });
+      });
+    });
+  });
+});
+
+app.put('/propostas/:id/responder', (req, res) => {
+  const { id } = req.params;
+  const { id_usuario, aceitar } = req.body;
+
+  if (!id_usuario || typeof aceitar !== 'boolean') {
+    return res.status(400).json({ mensagem: 'id_usuario e aceitar são obrigatórios.' });
+  }
+
+  const novoStatus = aceitar ? 'aceita' : 'recusada';
+
+  const update = `
+    UPDATE proposta SET status = ?
+    WHERE id_proposta = ? AND id_destinatario = ? AND status = 'pendente'
+  `;
+  db.query(update, [novoStatus, id, id_usuario], (err, result) => {
+    if (err) {
+      console.error('Erro ao responder proposta:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(409).json({ mensagem: 'Proposta não encontrada, já respondida, ou você não é o destinatário.' });
+    }
+    if (!aceitar) {
+      return res.json({ mensagem: 'Proposta recusada.' });
+    }
+
+    const busca = `
+      SELECT p.*, a.id_usuario AS id_vendedor, a.preco
+      FROM proposta p
+      JOIN anuncio a ON a.id_anuncio = p.id_anuncio
+      WHERE p.id_proposta = ?
+    `;
+    db.query(busca, [id], (err, rows) => {
+      if (err || rows.length === 0) {
+        console.error('Erro ao buscar proposta aceita:', err);
+        return res.status(500).json({ mensagem: 'Proposta aceita, mas falhou ao criar a transação.' });
+      }
+
+      const p = rows[0];
+      const idComprador = Number(p.id_vendedor) === Number(p.id_proponente) ? p.id_destinatario : p.id_proponente;
+      const valorTotal = Number(p.quantidade) * Number(p.preco);
+
+      const insertTransacao = `
+        INSERT INTO transacao (id_proposta, id_anuncio, id_comprador, quantidade, valor_total, endereco, data_hora, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'confirmada')
+      `;
+      db.query(
+        insertTransacao,
+        [p.id_proposta, p.id_anuncio, idComprador, p.quantidade, valorTotal, p.endereco, p.data_hora],
+        (err, r) => {
+          if (err) {
+            console.error('Erro ao criar transação:', err);
+            return res.status(500).json({ mensagem: 'Proposta aceita, mas falhou ao criar a transação.' });
+          }
+          res.status(201).json({ mensagem: 'Acordo fechado!', id_transacao: r.insertId });
+        }
+      );
+    });
+  });
+});
+
+app.get('/transacoes', (req, res) => {
+  const { id_usuario } = req.query;
+  if (!id_usuario) {
+    return res.status(400).json({ mensagem: 'id_usuario é obrigatório.' });
+  }
+
+  const query = `
+    SELECT t.id_transacao, t.id_anuncio, a.anuncio_titulo,
+           m.material_nome, m.unidade_medida,
+           t.quantidade, t.valor_total, t.endereco, t.data_hora, t.status,
+           t.id_comprador, a.id_usuario AS id_vendedor,
+           uc.usuario_nome AS comprador_nome,
+           uv.usuario_nome AS vendedor_nome,
+           EXISTS (SELECT 1 FROM avaliacao av
+                   WHERE av.id_transacao = t.id_transacao
+                     AND av.id_avaliador = ?) AS ja_avaliei
+    FROM transacao t
+    JOIN anuncio a ON a.id_anuncio = t.id_anuncio
+    JOIN material m ON m.id_material = a.id_material
+    JOIN usuario uc ON uc.id_usuario = t.id_comprador
+    JOIN usuario uv ON uv.id_usuario = a.id_usuario
+    WHERE t.id_comprador = ? OR a.id_usuario = ?
+    ORDER BY t.criado_em DESC
+  `;
+
+  db.query(query, [id_usuario, id_usuario, id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar transações:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao buscar transações.' });
+    }
+    res.json(results);
+  });
+});
+
+app.post('/transacoes', (req, res) => {
+  const { id_anuncio, id_comprador } = req.body;
+
+  if (!id_anuncio || !id_comprador) {
+    return res.status(400).json({ mensagem: 'Anúncio e comprador são obrigatórios.' });
+  }
+
+  db.query('SELECT id_usuario, preco, status FROM anuncio WHERE id_anuncio = ?', [id_anuncio], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar anúncio:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({ mensagem: 'Anúncio não encontrado.' });
+    }
+
+    const anuncio = results[0];
+
+    if (anuncio.status !== 'ativo') {
+      return res.status(400).json({ mensagem: 'Este anúncio não está mais disponível.' });
+    }
+
+    if (anuncio.id_usuario === Number(id_comprador)) {
+      return res.status(400).json({ mensagem: 'Você não pode comprar o seu próprio anúncio.' });
+    }
+
+    const queryExistente = "SELECT id_transacao FROM transacao WHERE id_anuncio = ? AND id_comprador = ? AND status <> 'cancelada'";
+    db.query(queryExistente, [id_anuncio, id_comprador], (err, existentes) => {
+      if (err) {
+        console.error('Erro ao verificar transação:', err);
+        return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+      }
+
+      if (existentes.length > 0) {
+        return res.status(409).json({ mensagem: 'Você já tem uma compra em andamento para este anúncio.' });
+      }
+
+      const queryInsert = "INSERT INTO transacao (id_anuncio, id_comprador, valor_total, status) VALUES (?, ?, ?, 'pendente')";
+      db.query(queryInsert, [id_anuncio, id_comprador, anuncio.preco], (err, resultado) => {
+        if (err) {
+          console.error('Erro ao criar transação:', err);
+          return res.status(500).json({ mensagem: 'Erro interno ao registrar a compra.' });
+        }
+
+        res.status(201).json({
+          mensagem: 'Compra registrada com sucesso!',
+          id_transacao: resultado.insertId
+        });
+      });
+    });
+  });
+});
+
+app.put('/transacoes/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { id_usuario, status } = req.body;
+
+  if (!id_usuario || !['concluida', 'cancelada'].includes(status)) {
+    return res.status(400).json({ mensagem: 'Dados inválidos.' });
+  }
+
+  const query = `
+    UPDATE transacao t
+    JOIN anuncio a ON a.id_anuncio = t.id_anuncio
+    SET t.status = ?
+    WHERE t.id_transacao = ?
+      AND t.status IN ('pendente', 'confirmada', 'em_transporte')
+      AND (t.id_comprador = ? OR a.id_usuario = ?)
+  `;
+
+  db.query(query, [status, id, id_usuario, id_usuario], (err, result) => {
+    if (err) {
+      console.error('Erro ao atualizar transação:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+    if (result.affectedRows === 0) {
+      return res.status(409).json({ mensagem: 'Transação não encontrada, já finalizada, ou você não participa dela.' });
+    }
+    res.json({ mensagem: status === 'concluida' ? 'Transação concluída!' : 'Transação cancelada.' });
+  });
+});
+
+// --- ROTAS DE RECOMPENSAS ---
+
+app.get('/recompensas', (req, res) => {
+  const sql = `
+    SELECT r.*, u.usuario_nome AS parceiro 
+    FROM recompensa r
+    JOIN usuario u ON r.id_empresa = u.id_usuario
+    WHERE r.quantidade > 0
+    ORDER BY r.id_recompensa DESC
+  `;
+  db.query(sql, (err, results) => {
+    if (err) return res.status(500).json({ erro: err.message });
+    res.json(results);
+  });
+});
+
+app.post('/recompensas', (req, res) => {
+  const { id_empresa, titulo, descricao, custo_pontos, quantidade, icone, cor } = req.body;
+  const sql = `INSERT INTO recompensa (id_empresa, titulo, descricao, custo_pontos, quantidade, icone, cor) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+  
+  db.query(sql, [id_empresa, titulo, descricao, custo_pontos, quantidade, icone || 'gift-outline', cor || '#2E7D32'], (err, result) => {
+    if (err) return res.status(500).json({ erro: err.message });
+    res.status(201).json({ id_recompensa: result.insertId, mensagem: 'Recompensa cadastrada!' });
+  });
+});
+
+app.post('/recompensas/resgatar', (req, res) => {
+  const { id_usuario, email, id_recompensa, titulo_recompensa } = req.body;
+
+  if (!id_usuario || !email || !id_recompensa) {
+    return res.status(400).json({ mensagem: 'Dados incompletos para resgate.' });
+  }
+
+  const checkQuery = 'SELECT quantidade FROM recompensa WHERE id_recompensa = ?';
+  db.query(checkQuery, [id_recompensa], (err, results) => {
+    if (err) return res.status(500).json({ erro: 'Erro interno.' });
+    if (results.length === 0 || results[0].quantidade <= 0) {
+      return res.status(400).json({ mensagem: 'Esta recompensa já esgotou.' });
+    }
+
+    const updateQuery = 'UPDATE recompensa SET quantidade = quantidade - 1 WHERE id_recompensa = ?';
+    db.query(updateQuery, [id_recompensa], async (errUpdate) => {
+      if (errUpdate) return res.status(500).json({ erro: 'Erro ao atualizar stock.' });
+
+      const codigoCupom = Math.random().toString(36).substring(2, 10).toUpperCase();
+
+      try {
+        await enviarCupomRecompensa(email, titulo_recompensa, codigoCupom);
+        res.status(200).json({ 
+          mensagem: 'Resgate realizado com sucesso! E-mail enviado.', 
+          codigo: codigoCupom 
+        });
+      } catch (mailErr) {
+        console.error('Erro ao enviar e-mail de resgate:', mailErr);
+        res.status(500).json({ mensagem: 'Resgate feito, mas falhou ao enviar o e-mail.' });
+      }
+    });
   });
 });
 

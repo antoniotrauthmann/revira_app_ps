@@ -1,10 +1,12 @@
 import { MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
   SafeAreaView,
   ScrollView,
   Share,
@@ -47,7 +49,11 @@ export default function DetalhesAnuncioScreen() {
   const [anuncio, setAnuncio] = useState<DetalheAnuncio | null>(null);
   const [loading, setLoading] = useState(true);
   const [imagemAtiva, setImagemAtiva] = useState(0);
-  const [isFavorito, setIsFavorito] = useState(false);
+  
+  // Estados funcionais trazidos da branch 'develop'
+  const [idUsuario, setIdUsuario] = useState<number | null>(null);
+  const [comprando, setComprando] = useState(false);
+  const [favoritado, setFavoritado] = useState(false);
 
   const carregarDetalhes = useCallback(async () => {
     if (!idAnuncio) return;
@@ -69,9 +75,127 @@ export default function DetalhesAnuncioScreen() {
     }
   }, [idAnuncio, router]);
 
+  const carregarStatusFavorito = useCallback(async () => {
+    try {
+      const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+      if (!dadosSalvos || !idAnuncio) return;
+
+      const usuario = JSON.parse(dadosSalvos);
+      const response = await fetch(`${API_BASE_URL}/favoritos/${usuario.id_usuario}/${idAnuncio}`);
+
+      if (response.ok) {
+        const data = await response.json();
+        setFavoritado(data.favoritado);
+      }
+    } catch (error) {
+      console.error('Erro ao verificar favorito:', error);
+    }
+  }, [idAnuncio]);
+
+  const toggleFavorito = async () => {
+    try {
+      const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+
+      if (!dadosSalvos) {
+        Alert.alert('Atenção', 'Faça login para salvar favoritos.');
+        return;
+      }
+
+      const usuario = JSON.parse(dadosSalvos);
+      const response = await fetch(`${API_BASE_URL}/favoritos`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id_usuario: usuario.id_usuario,
+          id_anuncio: idAnuncio,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.mensagem || 'Erro ao atualizar favorito');
+      }
+
+      setFavoritado(Boolean(data.favoritado));
+    } catch (error) {
+      console.error('Erro ao atualizar favorito:', error);
+      Alert.alert('Erro', 'Não foi possível atualizar esse anúncio nos favoritos.');
+    }
+  };
+
   useEffect(() => {
     carregarDetalhes();
-  }, [carregarDetalhes]);
+    carregarStatusFavorito();
+  }, [carregarDetalhes, carregarStatusFavorito]);
+
+  useEffect(() => {
+    carregarUsuarioLogado();
+  }, []);
+  
+  const carregarUsuarioLogado = async () => {
+    try {
+      const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+      if (dadosSalvos) {
+        setIdUsuario(JSON.parse(dadosSalvos).id_usuario);
+      }
+    } catch (error) {
+      console.error('Erro ao carregar usuário logado:', error);
+    }
+  };
+  
+  const mostrarMensagem = (titulo: string, mensagem: string) => {
+    if (Platform.OS === 'web') alert(mensagem);
+    else Alert.alert(titulo, mensagem);
+  };
+  
+  const criarTransacao = async () => {
+    if (!idUsuario || !anuncio) return;
+  
+    setComprando(true);
+  
+    try {
+      const response = await fetch(`${API_BASE_URL}/transacoes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id_anuncio: anuncio.id_anuncio,
+          id_comprador: idUsuario,
+        }),
+      });
+  
+      const data = await response.json();
+  
+      if (response.ok) {
+        mostrarMensagem('Compra registrada', 'Agora agende a retirada na tela de coletas.');
+        router.push('/coleta' as any);
+      } else {
+        mostrarMensagem('Erro', data.mensagem || 'Não foi possível registrar a compra.');
+      }
+    } catch (error) {
+      console.error('Erro ao registrar compra:', error);
+      mostrarMensagem('Erro de Conexão', 'Não foi possível conectar ao servidor.');
+    } finally {
+      setComprando(false);
+    }
+  };
+  
+  const handleComprar = () => {
+    if (!anuncio) return;
+  
+    const pergunta = `Deseja comprar "${anuncio.anuncio_titulo}"?`;
+  
+    if (Platform.OS === 'web') {
+      if (window.confirm(pergunta)) criarTransacao();
+    } else {
+      Alert.alert('Confirmar compra', pergunta, [
+        { text: 'Cancelar', style: 'cancel' },
+        { text: 'Comprar', onPress: criarTransacao },
+      ]);
+    }
+  };
 
   const getCategoryIcon = (categoria: string) => {
     switch (categoria?.toLowerCase()) {
@@ -100,6 +224,9 @@ export default function DetalhesAnuncioScreen() {
         year: 'numeric',
       })
     : '';
+  
+  const podeComprar =
+    anuncio?.status === 'ativo' && idUsuario !== null && idUsuario !== anuncio.id_usuario;
 
   const handleCompartilhar = async () => {
     try {
@@ -168,13 +295,13 @@ export default function DetalhesAnuncioScreen() {
 
           <TouchableOpacity 
             style={styles.iconButton} 
-            onPress={() => setIsFavorito(!isFavorito)}
+            onPress={toggleFavorito}
             activeOpacity={0.7}
           >
             <MaterialCommunityIcons 
-              name={isFavorito ? "heart" : "heart-outline"} 
+              name={favoritado ? "heart" : "heart-outline"} 
               size={22} 
-              color={isFavorito ? "#DC2626" : "#1E293B"} 
+              color={favoritado ? "#DC2626" : "#1E293B"} 
             />
           </TouchableOpacity>
         </View>
@@ -479,18 +606,36 @@ export default function DetalhesAnuncioScreen() {
               </View>
             </View>
 
-            {/* Botão Principal de Conversa no Desktop */}
+            {/* Botões Principais no Desktop */}
             {isDesktop && (
-              <TouchableOpacity
-                style={styles.chatButtonDesktop}
-                onPress={() => router.push('/chat')}
-                activeOpacity={0.85}
-              >
-                <MaterialCommunityIcons name="message-text-outline" size={22} color="#FFF" />
-                <Text style={styles.chatButtonText}>Conversar com o Vendedor</Text>
-              </TouchableOpacity>
+              <View style={styles.desktopButtonsContainer}>
+                {podeComprar && (
+                  <TouchableOpacity
+                    style={styles.buyButtonDesktop}
+                    onPress={handleComprar}
+                    disabled={comprando}
+                    activeOpacity={0.85}
+                  >
+                    {comprando ? (
+                      <ActivityIndicator color="#FFF" />
+                    ) : (
+                      <>
+                        <MaterialCommunityIcons name="cart-outline" size={22} color="#FFF" />
+                        <Text style={styles.buyButtonText}>Comprar</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+                )}
+                <TouchableOpacity
+                  style={styles.chatButtonDesktop}
+                  onPress={() => router.push({ pathname: '/chat', params: { id_anuncio: anuncio.id_anuncio, id_vendedor: anuncio.id_usuario } })}
+                  activeOpacity={0.85}
+                >
+                  <MaterialCommunityIcons name="message-text-outline" size={22} color="#FFF" />
+                  <Text style={styles.chatButtonText}>Conversar com o Vendedor</Text>
+                </TouchableOpacity>
+              </View>
             )}
-
           </View>
         </View>
       </ScrollView>
@@ -498,9 +643,27 @@ export default function DetalhesAnuncioScreen() {
       {/* Footer Fixo Apenas para Mobile */}
       {!isDesktop && (
         <View style={styles.footerMobile}>
+          {podeComprar && (
+            <TouchableOpacity
+              style={styles.buyButton}
+              onPress={handleComprar}
+              disabled={comprando}
+              activeOpacity={0.85}
+            >
+              {comprando ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <>
+                  <MaterialCommunityIcons name="cart-outline" size={22} color="#FFF" />
+                  <Text style={styles.buyButtonText}>Comprar</Text>
+                </>
+              )}
+            </TouchableOpacity>
+          )}
+
           <TouchableOpacity
             style={styles.chatButtonMobile}
-            onPress={() => router.push('/chat')}
+            onPress={() => router.push({ pathname: '/chat', params: { id_anuncio: anuncio.id_anuncio, id_vendedor: anuncio.id_usuario } })}
             activeOpacity={0.85}
           >
             <MaterialCommunityIcons name="message-text-outline" size={22} color="#FFF" />
@@ -567,7 +730,7 @@ const styles = StyleSheet.create({
 
   /* Estrutura de Layout e Espaçamentos */
   scrollContent: {
-    paddingBottom: 100,
+    paddingBottom: 160,
   },
   scrollContentDesktop: {
     paddingVertical: 32,
@@ -1046,6 +1209,23 @@ const styles = StyleSheet.create({
   },
 
   /* Botão Desktop */
+  desktopButtonsContainer: {
+    gap: 12,
+  },
+  buyButtonDesktop: {
+    backgroundColor: '#15803D',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 18,
+    borderRadius: 16,
+    shadowColor: '#15803D',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 4,
+  },
   chatButtonDesktop: {
     backgroundColor: '#16A34A',
     flexDirection: 'row',
@@ -1073,6 +1253,21 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: '#E2E8F0',
     elevation: 10,
+    gap: 10,
+  },
+  buyButton: {
+    backgroundColor: '#15803D',
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 10,
+    paddingVertical: 16,
+    borderRadius: 14,
+  },
+  buyButtonText: {
+    color: '#FFFFFF',
+    fontSize: 16,
+    fontWeight: '700',
   },
   chatButtonMobile: {
     backgroundColor: '#16A34A',

@@ -3,9 +3,9 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: localhost
--- Generation Time: Sep 25, 2026 at 06:07 PM
+-- Generation Time: Oct 17, 2026 at 11:18 PM
 -- Server version: 11.8.8-MariaDB
--- PHP Version: 8.5.10
+-- PHP Version: 8.5.11
 
 SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
 START TRANSACTION;
@@ -42,6 +42,18 @@ CREATE TABLE `anuncio` (
   `criado_em` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `anuncio`
+--
+
+INSERT INTO `anuncio` (`id_anuncio`, `id_usuario`, `id_material`, `id_endereco`, `anuncio_titulo`, `descricao`, `quantidade`, `preco`, `condicao`, `disponibilidade`, `status`, `criado_em`) VALUES
+(1, 1, 1, NULL, 'teste teste', NULL, 111.00, 111.00, NULL, 'imediata', 'ativo', '2026-10-17 16:58:17'),
+(2, 1, 1, NULL, 'teste teste', 'dassdadsadasdasdad', 111.00, 111.00, NULL, 'imediata', 'ativo', '2026-10-17 16:58:31'),
+(3, 1, 1, NULL, 'teste teste', 'dassdadsadasdasdad', 111.00, 111.00, NULL, 'imediata', 'ativo', '2026-10-17 16:58:31'),
+(4, 1, 1, NULL, 'dfafff', 'aaaaaaa', 15.00, 45.00, NULL, 'imediata', 'ativo', '2026-10-17 17:00:46'),
+(5, 1, 2, NULL, 'papelao', NULL, 2.00, 4.00, NULL, 'imediata', 'ativo', '2026-10-17 17:12:53'),
+(6, 6, 3, NULL, 'vidro', NULL, 15.50, 45.00, NULL, 'imediata', 'ativo', '2026-10-17 20:05:32');
+
 -- --------------------------------------------------------
 
 --
@@ -73,6 +85,15 @@ CREATE TABLE `avaliacao` (
   `criado_em` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `avaliacao`
+--
+
+INSERT INTO `avaliacao` (`id_avaliacao`, `id_transacao`, `id_avaliador`, `id_avaliado`, `nota`, `comentario`, `criado_em`) VALUES
+(3, 1, 7, 1, 5, 'teste', '2026-10-17 19:33:50'),
+(4, 1, 1, 7, 4, NULL, '2026-10-17 19:40:57'),
+(5, 3, 1, 6, 5, 'ok', '2026-10-17 20:12:58');
+
 -- --------------------------------------------------------
 
 --
@@ -87,6 +108,24 @@ CREATE TABLE `codigo_recuperacao` (
   `usado` tinyint(1) NOT NULL DEFAULT 0,
   `criado_em` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `codigo_recuperacao`
+--
+
+INSERT INTO `codigo_recuperacao` (`id_codigo`, `id_usuario`, `codigo`, `expira_em`, `usado`, `criado_em`) VALUES
+(1, 1, '392523', '2026-09-24 15:58:11', 0, '2026-09-24 15:43:11'),
+(2, 4, '036058', '2026-09-24 15:59:22', 0, '2026-09-24 15:44:22'),
+(3, 4, '375472', '2026-09-24 16:01:52', 0, '2026-09-24 15:46:52'),
+(4, 4, '038785', '2026-09-24 16:06:13', 0, '2026-09-24 15:51:13'),
+(5, 4, '866958', '2026-09-24 16:07:01', 0, '2026-09-24 15:52:01'),
+(6, 4, '779861', '2026-09-24 16:09:20', 0, '2026-09-24 15:54:20'),
+(7, 4, '466314', '2026-09-24 16:12:38', 1, '2026-09-24 15:57:38'),
+(8, 4, '887419', '2026-09-24 16:19:17', 0, '2026-09-24 16:04:17'),
+(9, 4, '912456', '2026-09-28 15:14:53', 0, '2026-09-28 14:59:53'),
+(10, 4, '432573', '2026-09-28 16:47:56', 0, '2026-09-28 16:32:56'),
+(11, 4, '972364', '2026-09-28 16:48:03', 0, '2026-09-28 16:33:03'),
+(12, 4, '428037', '2026-09-28 16:51:54', 1, '2026-09-28 16:36:54');
 
 -- --------------------------------------------------------
 
@@ -152,6 +191,13 @@ CREATE TABLE `endereco` (
   `longitude` decimal(9,6) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `endereco`
+--
+
+INSERT INTO `endereco` (`id_endereco`, `id_usuario`, `logradouro`, `cidade`, `estado`, `cep`, `latitude`, `longitude`) VALUES
+(1, 1, 'quintos dos infernos', 'abaetetuba', 'PA', '80000-000', NULL, NULL);
+
 -- --------------------------------------------------------
 
 --
@@ -178,6 +224,15 @@ CREATE TABLE `material` (
   `unidade_medida` varchar(10) NOT NULL DEFAULT 'kg'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+--
+-- Dumping data for table `material`
+--
+
+INSERT INTO `material` (`id_material`, `material_nome`, `categoria`, `unidade_medida`) VALUES
+(1, 'teste', 'Plástico', 'kg'),
+(2, 'papelão', 'Papel', 'kg'),
+(3, 'vidro', 'Vidro', 'kg');
+
 -- --------------------------------------------------------
 
 --
@@ -192,8 +247,22 @@ CREATE TABLE `mensagem` (
   `conteudo` text NOT NULL,
   `lida` tinyint(1) NOT NULL DEFAULT 0,
   `enviado_em` datetime NOT NULL DEFAULT current_timestamp(),
-  `url_imagem` varchar(500) DEFAULT NULL
+  `url_imagem` varchar(500) DEFAULT NULL,
+  `id_proposta` int(11) DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `mensagem`
+--
+
+INSERT INTO `mensagem` (`id_mensagem`, `id_anuncio`, `id_remetente`, `id_destinatario`, `conteudo`, `lida`, `enviado_em`, `url_imagem`, `id_proposta`) VALUES
+(9, 5, 6, 1, 'oi', 0, '2026-10-17 18:48:24', NULL, NULL),
+(10, 5, 1, 6, 'oioi', 0, '2026-10-17 18:49:29', NULL, NULL),
+(11, 5, 7, 1, 'olá', 0, '2026-10-17 18:51:11', NULL, NULL),
+(12, 5, 7, 1, 'Proposta de acordo', 0, '2026-10-17 18:54:23', NULL, 1),
+(13, 6, 1, 6, 'oi\n', 0, '2026-10-17 20:07:38', NULL, NULL),
+(14, 6, 1, 6, 'Proposta de acordo', 0, '2026-10-17 20:07:56', NULL, 2),
+(15, 6, 6, 1, 'Proposta de acordo', 0, '2026-10-17 20:12:14', NULL, 3);
 
 -- --------------------------------------------------------
 
@@ -241,6 +310,33 @@ CREATE TABLE `plano` (
 -- --------------------------------------------------------
 
 --
+-- Table structure for table `proposta`
+--
+
+CREATE TABLE `proposta` (
+  `id_proposta` int(11) NOT NULL,
+  `id_anuncio` int(11) NOT NULL,
+  `id_proponente` int(11) NOT NULL,
+  `id_destinatario` int(11) NOT NULL,
+  `endereco` varchar(255) NOT NULL,
+  `data_hora` datetime NOT NULL,
+  `quantidade` decimal(10,2) NOT NULL,
+  `status` enum('pendente','aceita','recusada') NOT NULL DEFAULT 'pendente',
+  `criada_em` timestamp NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `proposta`
+--
+
+INSERT INTO `proposta` (`id_proposta`, `id_anuncio`, `id_proponente`, `id_destinatario`, `endereco`, `data_hora`, `quantidade`, `status`, `criada_em`) VALUES
+(1, 5, 7, 1, 'minha casa, palmas, quadra 177 sul, alameda 2', '2026-10-20 10:00:00', 2.00, 'aceita', '2026-10-17 21:54:23'),
+(2, 6, 1, 6, 'rua da uft', '2026-10-20 12:00:00', 15.50, 'aceita', '2026-10-17 23:07:56'),
+(3, 6, 6, 1, 'rua da uft', '2026-10-16 13:00:00', 15.50, 'aceita', '2026-10-17 23:12:14');
+
+-- --------------------------------------------------------
+
+--
 -- Table structure for table `transacao`
 --
 
@@ -251,8 +347,21 @@ CREATE TABLE `transacao` (
   `valor_total` decimal(10,2) NOT NULL,
   `comissao` decimal(10,2) NOT NULL DEFAULT 0.00,
   `status` enum('pendente','confirmada','em_transporte','concluida','cancelada') NOT NULL DEFAULT 'pendente',
-  `criado_em` datetime NOT NULL DEFAULT current_timestamp()
+  `criado_em` datetime NOT NULL DEFAULT current_timestamp(),
+  `id_proposta` int(11) DEFAULT NULL,
+  `quantidade` decimal(10,2) DEFAULT NULL,
+  `endereco` varchar(255) DEFAULT NULL,
+  `data_hora` datetime DEFAULT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `transacao`
+--
+
+INSERT INTO `transacao` (`id_transacao`, `id_anuncio`, `id_comprador`, `valor_total`, `comissao`, `status`, `criado_em`, `id_proposta`, `quantidade`, `endereco`, `data_hora`) VALUES
+(1, 5, 7, 8.00, 0.00, 'concluida', '2026-10-17 19:08:35', 1, 2.00, 'minha casa, palmas, quadra 177 sul, alameda 2', '2026-10-20 10:00:00'),
+(2, 6, 1, 697.50, 0.00, 'cancelada', '2026-10-17 20:08:55', 2, 15.50, 'rua da uft', '2026-10-20 12:00:00'),
+(3, 6, 1, 697.50, 0.00, 'concluida', '2026-10-17 20:12:38', 3, 15.50, 'rua da uft', '2026-10-16 13:00:00');
 
 -- --------------------------------------------------------
 
@@ -269,6 +378,32 @@ CREATE TABLE `usuario` (
   `cpf_cnpj` varchar(20) DEFAULT NULL,
   `data_cadastro` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `favorito`
+--
+
+CREATE TABLE `favorito` (
+  `id_favorito` int(11) NOT NULL,
+  `id_usuario` int(11) NOT NULL,
+  `id_anuncio` int(11) NOT NULL,
+  `criado_em` datetime NOT NULL DEFAULT current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `usuario`
+--
+
+INSERT INTO `usuario` (`id_usuario`, `usuario_nome`, `email`, `senha_hash`, `tipo`, `cpf_cnpj`, `data_cadastro`) VALUES
+(1, 'joao igor', 'joaozinho123@gmail.com', '$2b$10$LeHy0HIPJf6gWTfM9LR3cO4qqCHf5WFv5W/yh3KwKL0Cr23lh/Kl6', 'catador', NULL, '2026-09-14 19:56:51'),
+(2, 'lionel messi', 'leomessi@gmail.com', '$2b$10$TupqA144IsSMKxm1KjU54O/RQQxiEaRTSPCM1p.lxkc7liwwgxP8O', 'catador', NULL, '2026-09-14 20:05:18'),
+(3, 'arrascaeta', 'arrasca123@gmail.com', '$2b$10$HZoGFgojbb9bqD5LtBeEnuPaLub4bcXlfq89wDV6i0dUnpO9yx3l6', 'catador', NULL, '2026-09-14 20:23:50'),
+(4, 'teste', 'uboltjr@gmail.com', '$2b$10$3CP9v487SBVFdWTdTVvzL.SCkrzFDnQPOEj/bixUMxNlfJvVjTBau', 'cooperativa', NULL, '2026-09-24 15:44:00'),
+(5, 'aasas', 'abc@gmail.com', '$2b$10$k2cTJi/lYwbthC2.7LxByOEv17qrjF1vooUV/2ua0l7PG4cN0BHVW', 'empresa', NULL, '2026-09-28 14:33:38'),
+(6, 'comprador', 'comprador@gmail.com', '$2b$10$VfyfTyvvVLLlOWbdvf1iNejZ1uOsU830yU2txpDRsh0UPuOvI.WlC', 'consumidor', NULL, '2026-10-17 17:54:34'),
+(7, 'lamine yamal', 'comprador2@gmail.com', '$2b$10$hbt3Vyv0ipeLO8LorasmleqKsdjsbU3hLQATu8x7cJRb3JiX2cZAi', 'consumidor', NULL, '2026-10-17 18:50:44');
 
 --
 -- Indexes for dumped tables
@@ -381,12 +516,19 @@ ALTER TABLE `plano`
   ADD PRIMARY KEY (`id_plano`);
 
 --
+-- Indexes for table `proposta`
+--
+ALTER TABLE `proposta`
+  ADD PRIMARY KEY (`id_proposta`);
+
+--
 -- Indexes for table `transacao`
 --
 ALTER TABLE `transacao`
   ADD PRIMARY KEY (`id_transacao`),
   ADD KEY `id_anuncio` (`id_anuncio`),
-  ADD KEY `id_comprador` (`id_comprador`);
+  ADD KEY `id_comprador` (`id_comprador`),
+  ADD KEY `fk_transacao_proposta` (`id_proposta`);
 
 --
 -- Indexes for table `usuario`
@@ -397,6 +539,15 @@ ALTER TABLE `usuario`
   ADD UNIQUE KEY `cpf_cnpj` (`cpf_cnpj`);
 
 --
+-- Indexes for table `favorito`
+--
+ALTER TABLE `favorito`
+  ADD PRIMARY KEY (`id_favorito`),
+  ADD UNIQUE KEY `uq_usuario_anuncio` (`id_usuario`, `id_anuncio`),
+  ADD KEY `fk_favorito_usuario` (`id_usuario`),
+  ADD KEY `fk_favorito_anuncio` (`id_anuncio`);
+
+--
 -- AUTO_INCREMENT for dumped tables
 --
 
@@ -404,7 +555,7 @@ ALTER TABLE `usuario`
 -- AUTO_INCREMENT for table `anuncio`
 --
 ALTER TABLE `anuncio`
-  MODIFY `id_anuncio` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_anuncio` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
 
 --
 -- AUTO_INCREMENT for table `assinatura`
@@ -416,13 +567,13 @@ ALTER TABLE `assinatura`
 -- AUTO_INCREMENT for table `avaliacao`
 --
 ALTER TABLE `avaliacao`
-  MODIFY `id_avaliacao` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_avaliacao` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=6;
 
 --
 -- AUTO_INCREMENT for table `codigo_recuperacao`
 --
 ALTER TABLE `codigo_recuperacao`
-  MODIFY `id_codigo` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_codigo` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=13;
 
 --
 -- AUTO_INCREMENT for table `coleta`
@@ -446,7 +597,7 @@ ALTER TABLE `destaque`
 -- AUTO_INCREMENT for table `endereco`
 --
 ALTER TABLE `endereco`
-  MODIFY `id_endereco` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_endereco` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=2;
 
 --
 -- AUTO_INCREMENT for table `imagens_anuncio`
@@ -458,13 +609,13 @@ ALTER TABLE `imagens_anuncio`
 -- AUTO_INCREMENT for table `material`
 --
 ALTER TABLE `material`
-  MODIFY `id_material` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_material` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `mensagem`
 --
 ALTER TABLE `mensagem`
-  MODIFY `id_mensagem` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_mensagem` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=16;
 
 --
 -- AUTO_INCREMENT for table `notificacao`
@@ -485,16 +636,28 @@ ALTER TABLE `plano`
   MODIFY `id_plano` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `proposta`
+--
+ALTER TABLE `proposta`
+  MODIFY `id_proposta` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
+
+--
 -- AUTO_INCREMENT for table `transacao`
 --
 ALTER TABLE `transacao`
-  MODIFY `id_transacao` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_transacao` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=4;
 
 --
 -- AUTO_INCREMENT for table `usuario`
 --
 ALTER TABLE `usuario`
-  MODIFY `id_usuario` int(11) NOT NULL AUTO_INCREMENT;
+  MODIFY `id_usuario` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
+
+--
+-- AUTO_INCREMENT for table `favorito`
+--
+ALTER TABLE `favorito`
+  MODIFY `id_favorito` int(11) NOT NULL AUTO_INCREMENT;
 
 --
 -- Constraints for dumped tables
@@ -586,6 +749,7 @@ ALTER TABLE `pagamento`
 -- Constraints for table `transacao`
 --
 ALTER TABLE `transacao`
+  ADD CONSTRAINT `fk_transacao_proposta` FOREIGN KEY (`id_proposta`) REFERENCES `proposta` (`id_proposta`),
   ADD CONSTRAINT `transacao_anuncio_fk` FOREIGN KEY (`id_anuncio`) REFERENCES `anuncio` (`id_anuncio`),
   ADD CONSTRAINT `transacao_comprador_fk` FOREIGN KEY (`id_comprador`) REFERENCES `usuario` (`id_usuario`);
 COMMIT;
