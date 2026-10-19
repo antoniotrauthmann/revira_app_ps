@@ -17,6 +17,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
 import * as ImagePicker from 'expo-image-picker';
 import { API_BASE_URL } from '../config/api';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 interface MaterialItem {
   id_material: number;
@@ -149,13 +150,20 @@ export default function CadastrarAnuncioScreen() {
       return;
     }
 
+    const salvo = await AsyncStorage.getItem('@usuario_logado');
+    if (!salvo) {
+      Alert.alert('Atenção', 'Faça login para publicar um anúncio.');
+      return;
+    }
+    const idUsuarioLogado = JSON.parse(salvo).id_usuario;
+
     setLoading(true);
     try {
       const response = await fetch(`${API_BASE_URL}/anuncios`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id_usuario: 1, 
+          id_usuario: idUsuarioLogado,
           id_material: materialSelecionado.id_material,
           anuncio_titulo: titulo,
           descricao,
