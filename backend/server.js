@@ -17,7 +17,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const db = mysql.createConnection({
   host: 'localhost',
   user: 'root',      
-  port: 3306,
+  port: 3307,
   password: '',      
   database: 'marketplace'
 });
@@ -1018,6 +1018,8 @@ app.put('/propostas/:id/responder', (req, res) => {
   });
 });
 
+// --- ROTAS DE TRANSAÇÕES ---
+
 app.get('/transacoes', (req, res) => {
   const { id_usuario } = req.query;
   if (!id_usuario) {
@@ -1161,6 +1163,7 @@ app.post('/recompensas', (req, res) => {
   });
 });
 
+// RESGATAR RECOMPENSA (Gera cupão, envia e-mail e reduz quantidade)
 app.post('/recompensas/resgatar', (req, res) => {
   const { id_usuario, email, id_recompensa, titulo_recompensa } = req.body;
 
@@ -1168,6 +1171,7 @@ app.post('/recompensas/resgatar', (req, res) => {
     return res.status(400).json({ mensagem: 'Dados incompletos para resgate.' });
   }
 
+  // 1. Verificar se ainda há stock da recompensa
   const checkQuery = 'SELECT quantidade FROM recompensa WHERE id_recompensa = ?';
   db.query(checkQuery, [id_recompensa], (err, results) => {
     if (err) return res.status(500).json({ erro: 'Erro interno.' });
@@ -1175,12 +1179,15 @@ app.post('/recompensas/resgatar', (req, res) => {
       return res.status(400).json({ mensagem: 'Esta recompensa já esgotou.' });
     }
 
+    // 2. Diminuir a quantidade em 1 no catálogo
     const updateQuery = 'UPDATE recompensa SET quantidade = quantidade - 1 WHERE id_recompensa = ?';
     db.query(updateQuery, [id_recompensa], async (errUpdate) => {
       if (errUpdate) return res.status(500).json({ erro: 'Erro ao atualizar stock.' });
 
+      // 3. Gerar código alfanumérico aleatório de 8 caracteres para o cupão
       const codigoCupom = Math.random().toString(36).substring(2, 10).toUpperCase();
 
+      // 4. Enviar e-mail ao utilizador
       try {
         await enviarCupomRecompensa(email, titulo_recompensa, codigoCupom);
         res.status(200).json({ 
