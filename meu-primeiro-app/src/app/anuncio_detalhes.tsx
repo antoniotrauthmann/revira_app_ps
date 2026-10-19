@@ -240,7 +240,6 @@ export default function DetalhesAnuncioScreen() {
     }
   };
 
-  // Função para navegar até a página do vendedor
   const handleIrParaVendedor = () => {
     if (anuncio?.id_usuario) {
       router.push(`/vendedor/${anuncio.id_usuario}` as any);
@@ -533,7 +532,6 @@ export default function DetalhesAnuncioScreen() {
             {/* Descrição Detalhada do Material */}
             <View style={styles.infoCard}>
               <View style={styles.cardHeader}>
-                {/* <MaterialCommunityIcons name="text-subject" size={22} color="#16A34A" /> */}
                 <Text style={styles.cardSectionTitle}>Descrição do Anúncio</Text>
               </View>
               <Text style={styles.descriptionText}>
@@ -636,6 +634,7 @@ export default function DetalhesAnuncioScreen() {
                 </TouchableOpacity>
               </View>
             )}
+
           </View>
         </View>
       </ScrollView>

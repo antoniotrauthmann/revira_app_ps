@@ -9,6 +9,7 @@ import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { API_BASE_URL } from '../config/api';
+import { getSessionToken } from '../config/session';
 
 interface Proposta {
   id: number;
@@ -40,7 +41,6 @@ interface AnuncioInfo {
 
 export default function ChatScreen() {
   const router = useRouter();
-  // id_vendedor = "a outra pessoa" da conversa (para o vendedor, é o comprador)
   const { id_anuncio, id_vendedor } = useLocalSearchParams<{
     id_anuncio: string;
     id_vendedor: string;
@@ -51,12 +51,11 @@ export default function ChatScreen() {
   const [userId, setUserId] = useState<number | null>(null);
   const [anuncio, setAnuncio] = useState<AnuncioInfo | null>(null);
 
-  // Comprador -> fala com o dono do anúncio. Vendedor -> fala com o comprador (param).
-const idOutro = anuncio
-  ? Number(userId) === Number(anuncio.id_usuario)
-    ? Number(id_vendedor)
-    : Number(anuncio.id_usuario)
-  : NaN;
+  const idOutro = anuncio
+    ? Number(userId) === Number(anuncio.id_usuario)
+      ? Number(id_vendedor)
+      : Number(anuncio.id_usuario)
+    : NaN;
 
   // Formulário de proposta
   const [modalVisible, setModalVisible] = useState(false);
@@ -67,37 +66,37 @@ const idOutro = anuncio
   const [enviandoProposta, setEnviandoProposta] = useState(false);
 
   // 1) Carrega o usuário logado
-useEffect(() => {
-  const carregarUsuario = async () => {
-    const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
-    if (dadosSalvos) setUserId(JSON.parse(dadosSalvos).id_usuario);
-  };
-  carregarUsuario();
-}, []);
+  useEffect(() => {
+    const carregarUsuario = async () => {
+      const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+      if (dadosSalvos) setUserId(JSON.parse(dadosSalvos).id_usuario);
+    };
+    carregarUsuario();
+  }, []);
 
-// 2) Carrega os dados do anúncio
-useEffect(() => {
-  if (!id_anuncio) return;
+  // 2) Carrega os dados do anúncio
+  useEffect(() => {
+    if (!id_anuncio) return;
 
-  const carregarAnuncio = async () => {
-    try {
-      const r = await fetch(`${API_BASE_URL}/anuncios/${id_anuncio}`);
-      if (r.ok) setAnuncio(await r.json());
-      else console.error('Falha ao carregar anúncio:', r.status);
-    } catch (e) {
-      console.error('Erro de conexão ao carregar anúncio:', e);
-    }
-  };
-  carregarAnuncio();
-}, [id_anuncio]);
+    const carregarAnuncio = async () => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/anuncios/${id_anuncio}`);
+        if (r.ok) setAnuncio(await r.json());
+        else console.error('Falha ao carregar anúncio:', r.status);
+      } catch (e) {
+        console.error('Erro de conexão ao carregar anúncio:', e);
+      }
+    };
+    carregarAnuncio();
+  }, [id_anuncio]);
 
-// 3) Busca mensagens e atualiza a cada 5s
-useEffect(() => {
-  if (!userId || !anuncio || !idOutro) return;
-  fetchMessages(userId);
-  const timer = setInterval(() => fetchMessages(userId), 5000);
-  return () => clearInterval(timer);
-}, [userId, anuncio, idOutro, id_anuncio]);
+  // 3) Busca mensagens e atualiza a cada 5s
+  useEffect(() => {
+    if (!userId || !anuncio || !idOutro) return;
+    fetchMessages(userId);
+    const timer = setInterval(() => fetchMessages(userId), 5000);
+    return () => clearInterval(timer);
+  }, [userId, anuncio, idOutro, id_anuncio]);
 
   const formatTime = (dateString?: string) => {
     if (!dateString) return '';
@@ -169,9 +168,17 @@ useEffect(() => {
   const enviarMensagemParaServidor = async (texto: string, imagemUrl: string | null) => {
     if (!userId || !idOutro || isNaN(idOutro)) return;
     try {
+      const token = await getSessionToken();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (token) {
+        headers['Authorization'] = `Bearer ${token}`;
+      }
+
       const response = await fetch(`${API_BASE_URL}/mensagens`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers,
         body: JSON.stringify({
           conteudo: texto,
           id_remetente: userId,
@@ -189,7 +196,7 @@ useEffect(() => {
 
   // ---------- PROPOSTA DE ACORDO ----------
 
-    const avisar = (titulo: string, msg: string) => {
+  const avisar = (titulo: string, msg: string) => {
     if (Platform.OS === 'web') window.alert(`${titulo}\n${msg}`);
     else Alert.alert(titulo, msg);
   };

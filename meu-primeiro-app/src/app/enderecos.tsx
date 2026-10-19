@@ -11,7 +11,6 @@ import {
   Platform,
   KeyboardAvoidingView,
   Modal,
-  Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
@@ -270,7 +269,7 @@ export default function EnderecosScreen() {
       {/* Modal de Cadastro de Endereço */}
       <Modal
         visible={modalVisible}
-        animationType="slide"
+        animationType="fade"
         transparent={true}
         onRequestClose={() => setModalVisible(false)}
       >

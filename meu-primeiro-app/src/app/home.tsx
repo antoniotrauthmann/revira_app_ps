@@ -9,6 +9,9 @@ import {
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { API_BASE_URL } from '../config/api';
+import { clearSessionToken, getSessionToken } from '../config/session';
  
 const CATEGORIAS = [
   { label: 'Papel', icon: 'file-document-outline' },
@@ -21,7 +24,23 @@ const CATEGORIAS = [
 export default function HomeScreen() {
   const router = useRouter();
  
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    const token = await getSessionToken();
+    if (token) {
+      try {
+        const response = await fetch(`${API_BASE_URL}/usuario/sessao-atual`, {
+          method: 'DELETE',
+          headers: { Authorization: `Bearer ${token}` },
+        });
+        if (!response.ok) {
+          console.error('O servidor não confirmou o encerramento da sessão atual.');
+        }
+      } catch (error) {
+        console.error('Não foi possível encerrar a sessão no servidor:', error);
+      }
+    }
+    await AsyncStorage.removeItem('@usuario_logado');
+    await clearSessionToken();
     router.replace('/');
   };
  

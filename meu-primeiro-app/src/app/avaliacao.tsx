@@ -18,16 +18,16 @@ import { API_BASE_URL } from '../config/api';
 
 export default function AvaliacaoScreen() {
   const router = useRouter();
-  const { id_transacao, id_avaliado } = useLocalSearchParams<{
-    id_transacao: string;
-    id_avaliado: string;
-  }>();
+  const params = useLocalSearchParams<{ id_transacao?: string; id_avaliado?: string; nome?: string }>();
 
   const [nota, setNota] = useState(0);
   const [comentario, setComentario] = useState('');
   const [loading, setLoading] = useState(false);
-  const [userId, setUserId] = useState<number | null>(null);
-  const [nomeAvaliado, setNomeAvaliado] = useState('');
+  const [idAvaliador, setIdAvaliador] = useState<number | null>(null);
+  const [nomeAvaliado, setNomeAvaliado] = useState(params.nome || '');
+
+  const idTransacao = Number(params.id_transacao);
+  const idAvaliado = Number(params.id_avaliado);
 
   const avisar = (titulo: string, msg: string, onOk?: () => void) => {
     if (Platform.OS === 'web') {
@@ -46,18 +46,27 @@ export default function AvaliacaoScreen() {
   // Usuário logado
   useEffect(() => {
     const carregarUsuario = async () => {
-      const salvo = await AsyncStorage.getItem('@usuario_logado');
-      if (salvo) setUserId(JSON.parse(salvo).id_usuario);
+      try {
+        const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+        if (!dadosSalvos) {
+          router.replace('/');
+          return;
+        }
+        const usuario = JSON.parse(dadosSalvos) as { id_usuario?: number };
+        setIdAvaliador(usuario.id_usuario || null);
+      } catch (error) {
+        console.error('Erro ao identificar usuário para avaliação:', error);
+      }
     };
     carregarUsuario();
-  }, []);
+  }, [router]);
 
-  // Nome de quem está sendo avaliado
+  // Buscar nome de quem está sendo avaliado se não vier nos parâmetros
   useEffect(() => {
-    if (!id_avaliado) return;
+    if (!idAvaliado || params.nome) return;
     const carregarNome = async () => {
       try {
-        const r = await fetch(`${API_BASE_URL}/usuario/${id_avaliado}`);
+        const r = await fetch(`${API_BASE_URL}/usuario/${idAvaliado}`);
         if (r.ok) {
           const u = await r.json();
           setNomeAvaliado(u.usuario_nome);
@@ -67,15 +76,15 @@ export default function AvaliacaoScreen() {
       }
     };
     carregarNome();
-  }, [id_avaliado]);
+  }, [idAvaliado, params.nome]);
 
   const handleAvaliar = async () => {
     if (nota === 0) {
       avisar('Atenção', 'Por favor, selecione uma nota de 1 a 5 estrelas.');
       return;
     }
-    if (!userId || !id_transacao || !id_avaliado) {
-      avisar('Erro', 'Abra a avaliação pela tela de Transações.');
+    if (!idAvaliador || !Number.isInteger(idTransacao) || !Number.isInteger(idAvaliado) || idTransacao <= 0 || idAvaliado <= 0) {
+      avisar('Erro', 'Esta transação não está disponível para avaliação ou os dados são inválidos.');
       return;
     }
 
@@ -86,26 +95,36 @@ export default function AvaliacaoScreen() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id_transacao: Number(id_transacao),
-          id_avaliador: userId,
-          id_avaliado: Number(id_avaliado),
-          nota,
-          comentario,
+          id_transacao: idTransacao,
+          id_avaliador: idAvaliador,
+          id_avaliado: idAvaliado,
+          nota: nota,
+          comentario: comentario.trim(),
         }),
       });
 
       const resp = await response.json();
 
       if (response.ok) {
-        avisar('Sucesso!', 'Sua avaliação foi enviada com sucesso.', () =>
-          router.push('/transacoes')
-        );
+        const voltarParaAvaliacoes = () => router.replace('/minhas_avaliacoes');
+        if (Platform.OS === 'web') {
+          window.alert('Sucesso!\nA sua avaliação foi enviada com sucesso.');
+          voltarParaAvaliacoes();
+        } else {
+          Alert.alert('Sucesso!', 'A sua avaliação foi enviada com sucesso.', [
+            { 
+              text: 'OK', 
+              onPress: voltarParaAvaliacoes
+            }
+          ]);
+        }
       } else {
-        avisar('Atenção', resp.mensagem || 'Não foi possível enviar a avaliação.');
+        throw new Error(resp.mensagem || 'Falha ao enviar avaliação.');
       }
     } catch (error) {
       console.error(error);
-      avisar('Erro', 'Erro ao conectar com o servidor.');
+      const mensagem = error instanceof Error ? error.message : 'Não foi possível enviar a avaliação.';
+      avisar('Erro', mensagem);
     } finally {
       setLoading(false);
     }
@@ -145,7 +164,7 @@ export default function AvaliacaoScreen() {
             </View>
             <Text style={styles.title}>Avaliar Transação</Text>
             <Text style={styles.subtitle}>
-              Como foi sua experiência com {nomeAvaliado || '...'}?
+              Como foi sua experiência com {nomeAvaliado || 'esta pessoa'}?
             </Text>
           </View>
 
@@ -169,9 +188,9 @@ export default function AvaliacaoScreen() {
           </View>
 
           <TouchableOpacity
-            style={[styles.button, nota === 0 && styles.buttonDisabled]}
+            style={[styles.button, (nota === 0 || loading) && styles.buttonDisabled]}
             onPress={handleAvaliar}
-            disabled={loading || nota === 0}
+            disabled={loading || nota === 0 || !idAvaliador}
           >
             {loading ? (
               <ActivityIndicator color="#FFF" />

@@ -1,8 +1,9 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   StyleSheet,
   Text,
   View,
+  Image,
   TouchableOpacity,
   ScrollView,
   SafeAreaView,
@@ -12,9 +13,10 @@ import {
   Switch,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { API_BASE_URL } from '../config/api';
+import { API_BASE_URL, resolveProfileImageUrl } from '../config/api';
+import { clearSessionToken, getSessionToken } from '../config/session';
 
 // Tipo para os dados do usuário
 interface Usuario {
@@ -23,21 +25,20 @@ interface Usuario {
   email: string;
   tipo: string;
   cpf_cnpj?: string | null;
+  foto_perfil?: string | null;
   data_cadastro?: string;
 }
 
 // Componente para cada item de menu
 function MenuItem({
   icon,
-  iconColor,
   label,
   subtitle,
   onPress,
-  showChevron = true,
+  showChevron = Boolean(onPress),
   rightElement,
 }: {
-  icon: string;
-  iconColor?: string;
+  icon: React.ComponentProps<typeof MaterialCommunityIcons>['name'];
   label: string;
   subtitle?: string;
   onPress?: () => void;
@@ -49,13 +50,10 @@ function MenuItem({
       style={styles.menuItem}
       onPress={onPress}
       activeOpacity={onPress ? 0.6 : 1}
+      disabled={!onPress && !rightElement}
     >
-      <View style={[styles.menuIconCircle, { backgroundColor: (iconColor || '#2E7D32') + '18' }]}>
-        <MaterialCommunityIcons
-          name={icon as any}
-          size={22}
-          color={iconColor || '#2E7D32'}
-        />
+      <View style={styles.menuIconCircle}>
+        <MaterialCommunityIcons name={icon} size={21} color="#2E7D32" />
       </View>
       <View style={styles.menuTextContainer}>
         <Text style={styles.menuLabel}>{label}</Text>
@@ -64,7 +62,7 @@ function MenuItem({
       {rightElement ? (
         rightElement
       ) : showChevron ? (
-        <MaterialCommunityIcons name="chevron-right" size={22} color="#B0BEC5" />
+        <MaterialCommunityIcons name="chevron-right" size={20} color="#9AA69C" />
       ) : null}
     </TouchableOpacity>
   );
@@ -83,16 +81,11 @@ export default function ProfileScreen() {
   const router = useRouter();
   const [usuario, setUsuario] = useState<Usuario | null>(null);
   const [loading, setLoading] = useState(true);
-  const [notificacoesAtivas, setNotificacoesAtivas] = useState(true);
   const [modoEscuro, setModoEscuro] = useState(false);
 
   const API_URL = API_BASE_URL;
 
-  useEffect(() => {
-    carregarPerfil();
-  }, []);
-
-  const carregarPerfil = async () => {
+  const carregarPerfil = useCallback(async () => {
     try {
       // Busca o ID do usuário salvo no AsyncStorage
       const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
@@ -109,7 +102,8 @@ export default function ProfileScreen() {
       const response = await fetch(`${API_URL}/usuario/${usuarioLocal.id_usuario}`);
 
       if (response.ok) {
-        const dadosAtualizados = await response.json();
+        const dadosAtualizados: Usuario = await response.json();
+        dadosAtualizados.foto_perfil = resolveProfileImageUrl(dadosAtualizados.foto_perfil);
         setUsuario(dadosAtualizados);
         // Atualiza o cache local
         await AsyncStorage.setItem('@usuario_logado', JSON.stringify(dadosAtualizados));
@@ -131,11 +125,33 @@ export default function ProfileScreen() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [router]);
+
+  useFocusEffect(
+    useCallback(() => {
+      setLoading(true);
+      void carregarPerfil();
+    }, [carregarPerfil])
+  );
 
   const handleLogout = async () => {
     const executarLogout = async () => {
+      const token = await getSessionToken();
+      if (token) {
+        try {
+          const response = await fetch(`${API_BASE_URL}/usuario/sessao-atual`, {
+            method: 'DELETE',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+          if (!response.ok) {
+            console.error('O servidor não confirmou o encerramento da sessão atual.');
+          }
+        } catch (error) {
+          console.error('Não foi possível encerrar a sessão no servidor:', error);
+        }
+      }
       await AsyncStorage.removeItem('@usuario_logado');
+      await clearSessionToken();
       router.replace('/');
     };
 
@@ -171,12 +187,12 @@ export default function ProfileScreen() {
   // Formata o tipo de usuário para exibição
   const formatarTipo = (tipo: string) => {
     const tipos: Record<string, string> = {
-      catador: '♻️ Catador',
-      cooperativa: '🤝 Cooperativa',
-      industria: '🏭 Indústria',
-      empresa: '🏢 Empresa',
-      consumidor: '🛒 Consumidor',
-      admin: '⚙️ Administrador',
+      catador: 'Catador',
+      cooperativa: 'Cooperativa',
+      industria: 'Indústria',
+      empresa: 'Empresa',
+      consumidor: 'Consumidor',
+      admin: 'Administrador',
     };
     return tipos[tipo] || tipo || 'Não definido';
   };
@@ -214,24 +230,33 @@ export default function ProfileScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <TouchableOpacity
+        onPress={handleVoltar}
+        style={styles.backButton}
+        accessibilityLabel="Voltar"
+      >
+        <MaterialCommunityIcons name="arrow-left" size={24} color="#1B5E20" />
+      </TouchableOpacity>
+
       <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-        
-        {/* Header com botão voltar */}
+        {/* O título rola com o conteúdo; apenas a seta fica fixa. */}
         <View style={styles.topBar}>
-          <TouchableOpacity onPress={handleVoltar} style={styles.backButton}>
-            <MaterialCommunityIcons name="arrow-left" size={24} color="#1B5E20" />
-          </TouchableOpacity>
+          <View style={styles.headerSpacer} />
           <Text style={styles.topBarTitle}>Meu Perfil</Text>
-          <View style={{ width: 40 }} />
+          <View style={styles.headerSpacer} />
         </View>
 
         {/* Card do perfil do usuário */}
         <View style={styles.profileCard}>
           <View style={styles.avatarGradient}>
             <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {usuario ? getIniciais(usuario.usuario_nome) : '??'}
-              </Text>
+              {usuario?.foto_perfil ? (
+                <Image source={{ uri: usuario.foto_perfil }} style={styles.avatarImage} />
+              ) : (
+                <Text style={styles.avatarText}>
+                  {usuario ? getIniciais(usuario.usuario_nome) : '??'}
+                </Text>
+              )}
             </View>
           </View>
 
@@ -257,13 +282,14 @@ export default function ProfileScreen() {
           <MenuItem
             icon="account-edit-outline"
             label="Editar Perfil"
-            subtitle="Nome, foto e informações pessoais"
+            subtitle="Atualize seus dados e sua foto"
+            onPress={() => router.push('/editar_perfil')}
           />
           <View style={styles.menuDivider} />
           <MenuItem
             icon="map-marker-outline"
             label="Meus Endereços"
-            subtitle="Gerenciar endereços de coleta"
+            subtitle="Gerencie seus endereços de coleta"
             onPress={() => router.push('/enderecos')}
           />
           <View style={styles.menuDivider} />
@@ -277,9 +303,8 @@ export default function ProfileScreen() {
           <View style={styles.menuDivider} />
           <MenuItem
             icon="star-outline"
-            iconColor="#F9A825"
             label="Minhas Avaliações"
-            subtitle="Veja o que dizem sobre você"
+            subtitle="Avaliações recebidas e enviadas"
             onPress={() => router.push('/minhas_avaliacoes')} 
           />
           <View style={styles.menuDivider} />
@@ -298,21 +323,20 @@ export default function ProfileScreen() {
           <MenuItem
             icon="lock-outline"
             label="Alterar Senha"
-            subtitle="Atualize sua senha de acesso"
+            subtitle="Altere sua senha de acesso"
           />
           <View style={styles.menuDivider} />
           <MenuItem
             icon="shield-check-outline"
-            iconColor="#1565C0"
             label="Privacidade e Segurança"
-            subtitle="Controle de dados e permissões"
+            subtitle="Gerencie sessões e sua conta"
+            onPress={() => router.push('/privacidade_seguranca')}
           />
           <View style={styles.menuDivider} />
           <MenuItem
             icon="credit-card-outline"
-            iconColor="#7B1FA2"
             label="Plano e Assinatura"
-            subtitle="Gerencie seu plano atual"
+            subtitle="Consulte seu plano atual"
           />
         </View>
 
@@ -321,18 +345,9 @@ export default function ProfileScreen() {
         <View style={styles.menuSection}>
           <MenuItem
             icon="bell-outline"
-            iconColor="#E65100"
             label="Notificações"
-            subtitle={notificacoesAtivas ? 'Ativadas' : 'Desativadas'}
-            showChevron={false}
-            rightElement={
-              <Switch
-                value={notificacoesAtivas}
-                onValueChange={setNotificacoesAtivas}
-                trackColor={{ false: '#CFD8DC', true: '#A5D6A7' }}
-                thumbColor={notificacoesAtivas ? '#2E7D32' : '#90A4AE'}
-              />
-            }
+            subtitle="Escolha quais alertas deseja receber"
+            onPress={() => router.push('/notificacoes')}
           />
           <View style={styles.menuDivider} />
           <MenuItem
@@ -352,21 +367,18 @@ export default function ProfileScreen() {
           <View style={styles.menuDivider} />
           <MenuItem
             icon="translate"
-            iconColor="#00838F"
             label="Idioma"
             subtitle="Português (Brasil)"
           />
           <View style={styles.menuDivider} />
           <MenuItem
             icon="help-circle-outline"
-            iconColor="#546E7A"
             label="Ajuda e Suporte"
-            subtitle="FAQ, contato e termos de uso"
+            subtitle="Perguntas frequentes e contato"
           />
           <View style={styles.menuDivider} />
           <MenuItem
             icon="information-outline"
-            iconColor="#546E7A"
             label="Sobre o App"
             subtitle="Versão 1.0.0"
           />
@@ -410,16 +422,24 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingHorizontal: 16,
     paddingTop: Platform.OS === 'android' ? 40 : 12,
-    paddingBottom: 12,
+    paddingBottom: 14,
     backgroundColor: '#F4F9F4',
   },
   backButton: {
+    position: 'absolute',
+    zIndex: 10,
+    elevation: 10,
+    top: Platform.OS === 'android' ? 40 : 12,
+    left: 16,
     width: 40,
     height: 40,
     borderRadius: 20,
     backgroundColor: '#E8F5E9',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+  headerSpacer: {
+    width: 40,
   },
   topBarTitle: {
     fontSize: 18,
@@ -430,7 +450,7 @@ const styles = StyleSheet.create({
   // Profile Card
   profileCard: {
     marginHorizontal: 20,
-    marginTop: 8,
+    marginTop: 6,
     backgroundColor: '#FFF',
     borderRadius: 20,
     padding: 24,
@@ -473,6 +493,11 @@ const styles = StyleSheet.create({
     color: '#FFF',
     letterSpacing: 1,
   },
+  avatarImage: {
+    width: '100%',
+    height: '100%',
+    borderRadius: 40,
+  },
   userName: {
     fontSize: 22,
     fontWeight: 'bold',
@@ -509,13 +534,13 @@ const styles = StyleSheet.create({
   // Section Title
   sectionTitleContainer: {
     paddingHorizontal: 24,
-    paddingTop: 24,
-    paddingBottom: 8,
+    paddingTop: 22,
+    paddingBottom: 9,
   },
   sectionTitle: {
-    fontSize: 13,
+    fontSize: 14,
     fontWeight: '700',
-    color: '#90A4AE',
+    color: '#1B5E20',
     textTransform: 'uppercase',
     letterSpacing: 1.2,
   },
@@ -537,34 +562,37 @@ const styles = StyleSheet.create({
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingVertical: 14,
-    paddingHorizontal: 16,
+    minHeight: 72,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
   },
   menuIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 38,
+    height: 38,
+    borderRadius: 13,
+    backgroundColor: '#E8F5E9',
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 14,
+    marginRight: 12,
   },
   menuTextContainer: {
     flex: 1,
   },
   menuLabel: {
     fontSize: 15,
-    fontWeight: '600',
+    fontWeight: '700',
     color: '#263238',
   },
   menuSubtitle: {
     fontSize: 12,
-    color: '#90A4AE',
-    marginTop: 2,
+    lineHeight: 16,
+    color: '#718075',
+    marginTop: 3,
   },
   menuDivider: {
     height: 1,
-    backgroundColor: '#F5F5F5',
-    marginLeft: 70,
+    backgroundColor: '#E8F0E8',
+    marginLeft: 64,
   },
 
   // Logout Button
