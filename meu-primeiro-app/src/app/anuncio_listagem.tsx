@@ -1,21 +1,22 @@
-import React, { useEffect, useState, useCallback, useRef } from 'react';
+import { MaterialCommunityIcons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useRouter } from 'expo-router';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
+  Animated,
+  FlatList,
+  Image,
+  Platform,
+  RefreshControl,
+  SafeAreaView,
   StyleSheet,
   Text,
-  View,
-  TouchableOpacity,
-  FlatList,
-  SafeAreaView,
   TextInput,
-  Image,
-  ActivityIndicator,
-  RefreshControl,
-  Platform,
-  Animated,
+  TouchableOpacity,
+  useWindowDimensions,
+  View,
 } from 'react-native';
-import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config/api';
 
 interface Anuncio {
@@ -38,12 +39,17 @@ const CATEGORIAS_FILTRO = ['Todos', 'Papel', 'Plástico', 'Vidro', 'Metal', 'Ele
 
 export default function AnunciosScreen() {
   const router = useRouter();
+  const { width } = useWindowDimensions();
+
+  // Estados principais
   const [anuncios, setAnuncios] = useState<Anuncio[]>([]);
   const [favoritos, setFavoritos] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busca, setBusca] = useState('');
   const [categoriaSelecionada, setCategoriaSelecionada] = useState('Todos');
+
+  // Referência para animação de pulso no botão de favorito
   const buttonPulseRefs = useRef<Record<number, Animated.Value>>({});
 
   const triggerButtonPulse = (idAnuncio: number) => {
@@ -62,6 +68,14 @@ export default function AnunciosScreen() {
       }),
     ]).start();
   };
+
+  // Cálculo de colunas responsivas para Celular vs Desktop
+  const numColumns = useMemo(() => {
+    if (width >= 1200) return 4;
+    if (width >= 800) return 3;
+    if (width >= 600) return 2;
+    return 1;
+  }, [width]);
 
   const carregarAnuncios = useCallback(async () => {
     try {
@@ -112,7 +126,9 @@ export default function AnunciosScreen() {
       const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
 
       if (!dadosSalvos) {
-        Platform.OS === 'web' ? alert('Faça login para salvar favoritos.') : null;
+        if (Platform.OS === 'web') {
+          alert('Faça login para salvar favoritos.');
+        }
         return;
       }
 
@@ -189,190 +205,385 @@ export default function AnunciosScreen() {
     const pulse = buttonPulseRefs.current[item.id_anuncio] || (buttonPulseRefs.current[item.id_anuncio] = new Animated.Value(1));
 
     return (
-    <TouchableOpacity
-      style={styles.card}
-      activeOpacity={0.85}
-      onPress={() => router.push({ pathname: '/anuncio_detalhes', params: { id: item.id_anuncio } })}
-    >
-      <View style={styles.imageContainer}>
-        {item.imagem_capa ? (
-          <Image source={{ uri: item.imagem_capa }} style={styles.cardImage} />
-        ) : (
-          <View style={styles.placeholderImage}>
-            <MaterialCommunityIcons
-              name={getCategoryIcon(item.categoria)}
-              size={42}
-              color="#2E7D32"
-            />
+      <View style={[styles.cardWrapper, { width: numColumns > 1 ? `${100 / numColumns}%` : '100%' }]}>
+        <TouchableOpacity
+          style={styles.card}
+          activeOpacity={0.9}
+          onPress={() => router.push({ pathname: '/anuncio_detalhes', params: { id: item.id_anuncio } })}
+        >
+          {/* Imagem do Produto + Badges */}
+          <View style={styles.imageContainer}>
+            {item.imagem_capa ? (
+              <Image source={{ uri: item.imagem_capa }} style={styles.cardImage} />
+            ) : (
+              <View style={styles.placeholderImage}>
+                <MaterialCommunityIcons
+                  name={getCategoryIcon(item.categoria)}
+                  size={52}
+                  color="#16A34A"
+                />
+              </View>
+            )}
+
+            {/* Badge de Categoria */}
+            <View style={styles.categoryBadge}>
+              <MaterialCommunityIcons name={getCategoryIcon(item.categoria)} size={12} color="#FFF" />
+              <Text style={styles.categoryBadgeText}>{item.categoria}</Text>
+            </View>
+
+            {/* Botão Favoritar Animado */}
+            <Animated.View style={[styles.favoriteButtonWrap, { transform: [{ scale: pulse }] }]}>
+              <TouchableOpacity
+                style={[styles.favoriteButton, estaFavoritado && styles.favoriteButtonFavoritado]}
+                activeOpacity={0.8}
+                onPress={() => toggleFavorito(item.id_anuncio)}
+              >
+                <MaterialCommunityIcons
+                  name={estaFavoritado ? 'heart' : 'heart-outline'}
+                  size={18}
+                  color={estaFavoritado ? '#EF4444' : '#475569'}
+                />
+              </TouchableOpacity>
+            </Animated.View>
           </View>
-        )}
 
-        <Animated.View style={[styles.favoriteButtonWrap, { transform: [{ scale: pulse }] }]}>
-          <TouchableOpacity
-            style={[styles.favoriteButton, estaFavoritado && styles.favoriteButtonFavoritado]}
-            activeOpacity={0.8}
-            onPress={() => toggleFavorito(item.id_anuncio)}
-          >
-            <MaterialCommunityIcons
-              name={estaFavoritado ? 'heart' : 'heart-outline'}
-              size={18}
-              color={estaFavoritado ? '#D32F2F' : '#2E7D32'}
-            />
-          </TouchableOpacity>
-        </Animated.View>
-
-        <View style={styles.categoryBadge}>
-          <Text style={styles.categoryBadgeText}>{item.categoria}</Text>
-        </View>
-      </View>
-
-      <View style={styles.cardBody}>
-        <Text style={styles.cardTitle} numberOfLines={1}>
-          {item.anuncio_titulo}
-        </Text>
-
-        <Text style={styles.materialText}>
-          Material: <Text style={styles.materialHighlight}>{item.material_nome}</Text>
-        </Text>
-
-        <View style={styles.infoRow}>
-          <View style={styles.qtdTag}>
-            <MaterialCommunityIcons name="weight" size={14} color="#666" />
-            <Text style={styles.qtdText}>
-              {Number(item.quantidade)} {item.unidade_medida}
+          {/* Corpo do Card */}
+          <View style={styles.cardBody}>
+            {/* Título */}
+            <Text style={styles.cardTitle} numberOfLines={2}>
+              {item.anuncio_titulo}
             </Text>
+
+            {/* Tag de Material */}
+            <View style={styles.materialRow}>
+              <Text style={styles.materialLabel}>Material:</Text>
+              <View style={styles.materialBadge}>
+                <Text style={styles.materialBadgeText} numberOfLines={1}>
+                  {item.material_nome}
+                </Text>
+              </View>
+            </View>
+
+            {/* Quantidade e Preço */}
+            <View style={styles.infoRow}>
+              <View style={styles.qtdTag}>
+                <MaterialCommunityIcons name="scale-balance" size={14} color="#059669" />
+                <Text style={styles.qtdText}>
+                  {Number(item.quantidade)} {item.unidade_medida}
+                </Text>
+              </View>
+
+              <Text style={styles.priceText}>
+                R$ {Number(item.preco).toFixed(2).replace('.', ',')}
+              </Text>
+            </View>
+
+            {/* Informações do Vendedor */}
+            <View style={styles.sellerRow}>
+              <View style={styles.sellerInfo}>
+                <View style={styles.sellerAvatar}>
+                  <Text style={styles.sellerAvatarText}>
+                    {item.vendedor_nome ? item.vendedor_nome.charAt(0).toUpperCase() : 'V'}
+                  </Text>
+                </View>
+
+                <View style={styles.sellerDetails}>
+                  <Text style={styles.sellerName} numberOfLines={1}>
+                    {item.vendedor_nome}
+                  </Text>
+                  <View style={styles.ratingContainer}>
+                    <MaterialCommunityIcons name="star" size={12} color="#F59E0B" />
+                    <Text style={styles.ratingText}>5.0</Text>
+                  </View>
+                </View>
+              </View>
+
+              {/* Botão Contato */}
+              <TouchableOpacity
+                style={styles.chatButton}
+                onPress={() => router.push({ pathname: '/chat', params: { id_anuncio: item.id_anuncio, id_vendedor: item.id_usuario } })}
+                activeOpacity={0.8}
+              >
+                <MaterialCommunityIcons name="message-text-outline" size={14} color="#FFF" />
+                <Text style={styles.chatButtonText}>Contato</Text>
+              </TouchableOpacity>
+            </View>
           </View>
-
-          <Text style={styles.priceText}>
-            R$ {Number(item.preco).toFixed(2).replace('.', ',')}
-          </Text>
-        </View>
-
-        <View style={styles.sellerRow}>
-          <View style={styles.sellerInfo}>
-            <MaterialCommunityIcons name="account-circle-outline" size={16} color="#666" />
-            <Text style={styles.sellerName} numberOfLines={1}>
-              {item.vendedor_nome}
-            </Text>
-            <MaterialCommunityIcons name="star" size={14} color="#F9A825" />
-            <Text style={{fontSize: 12, color: '#F9A825', fontWeight: 'bold', marginRight: 10}}>5.0</Text>
-          </View>
-
-          <TouchableOpacity
-            style={styles.chatButton}
-            onPress={() => router.push({ pathname: '/chat', params: { id_anuncio: item.id_anuncio, id_vendedor: item.id_usuario } })}
-            activeOpacity={0.7}
-          >
-            <MaterialCommunityIcons name="message-text-outline" size={16} color="#FFF" />
-            <Text style={styles.chatButtonText}>Contato</Text>
-          </TouchableOpacity>
-        </View>
+        </TouchableOpacity>
       </View>
-    </TouchableOpacity>
     );
   };
 
   return (
     <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <TouchableOpacity style={styles.backButton} onPress={() => router.push('/home')}>
-          <MaterialCommunityIcons name="arrow-left" size={24} color="#1B5E20" />
-        </TouchableOpacity>
-        <Text style={styles.headerTitle}>Anúncios Disponíveis</Text>
-      </View>
-
-      <View style={styles.searchContainer}>
-        <MaterialCommunityIcons name="magnify" size={20} color="#666" style={styles.searchIcon} />
-        <TextInput
-          style={styles.searchInput}
-          placeholder="Buscar por título, material ou vendedor..."
-          placeholderTextColor="#999"
-          value={busca}
-          onChangeText={setBusca}
-        />
-        {busca.length > 0 && (
-          <TouchableOpacity onPress={() => setBusca('')}>
-            <MaterialCommunityIcons name="close-circle" size={18} color="#999" />
+      <View style={styles.mainContent}>
+        {/* Cabeçalho */}
+        <View style={styles.header}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.push('/home')}>
+            <MaterialCommunityIcons name="arrow-left" size={22} color="#16A34A" />
           </TouchableOpacity>
+          <View>
+            <Text style={styles.headerTitle}>Explorar Produtos</Text>
+            <Text style={styles.headerSubtitle}>
+              {anunciosFiltrados.length} {anunciosFiltrados.length === 1 ? 'item sustentável' : 'itens sustentáveis'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Campo de Busca */}
+        <View style={styles.searchContainer}>
+          <MaterialCommunityIcons name="magnify" size={22} color="#64748B" style={styles.searchIcon} />
+          <TextInput
+            style={styles.searchInput}
+            placeholder="Buscar por título, material ou vendedor..."
+            placeholderTextColor="#94A3B8"
+            value={busca}
+            onChangeText={setBusca}
+          />
+          {busca.length > 0 && (
+            <TouchableOpacity onPress={() => setBusca('')}>
+              <MaterialCommunityIcons name="close-circle" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Carrossel de Categorias */}
+        <View style={styles.categoriesWrapper}>
+          <FlatList
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            data={CATEGORIAS_FILTRO}
+            keyExtractor={(item) => item}
+            contentContainerStyle={styles.categoriesList}
+            renderItem={({ item }) => {
+              const selected = categoriaSelecionada === item;
+              return (
+                <TouchableOpacity
+                  style={[styles.categoryChip, selected && styles.categoryChipSelected]}
+                  onPress={() => setCategoriaSelecionada(item)}
+                  activeOpacity={0.8}
+                >
+                  <MaterialCommunityIcons
+                    name={getCategoryIcon(item)}
+                    size={16}
+                    color={selected ? '#FFF' : '#64748B'}
+                  />
+                  <Text style={[styles.categoryChipText, selected && styles.categoryChipTextSelected]}>
+                    {item}
+                  </Text>
+                </TouchableOpacity>
+              );
+            }}
+          />
+        </View>
+
+        {/* Lista de Produtos */}
+        {loading ? (
+          <View style={styles.loadingContainer}>
+            <ActivityIndicator size="large" color="#16A34A" />
+            <Text style={styles.loadingText}>Buscando produtos ecológicos...</Text>
+          </View>
+        ) : (
+          <FlatList
+            key={numColumns}
+            data={anunciosFiltrados}
+            keyExtractor={(item) => item.id_anuncio.toString()}
+            renderItem={renderItem}
+            numColumns={numColumns}
+            contentContainerStyle={styles.listContainer}
+            columnWrapperStyle={numColumns > 1 ? styles.columnWrapper : undefined}
+            refreshControl={
+              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#16A34A']} />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyContainer}>
+                <View style={styles.emptyIconCircle}>
+                  <MaterialCommunityIcons name="leaf-off" size={48} color="#94A3B8" />
+                </View>
+                <Text style={styles.emptyTitle}>Nenhum produto encontrado</Text>
+                <Text style={styles.emptySubtitle}>
+                  Tente ajustar sua busca ou mudar o filtro de categorias.
+                </Text>
+              </View>
+            }
+          />
         )}
       </View>
-
-      <View style={styles.categoriesWrapper}>
-        <FlatList
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          data={CATEGORIAS_FILTRO}
-          keyExtractor={(item) => item}
-          contentContainerStyle={styles.categoriesList}
-          renderItem={({ item }) => {
-            const selected = categoriaSelecionada === item;
-            return (
-              <TouchableOpacity
-                style={[styles.categoryChip, selected && styles.categoryChipSelected]}
-                onPress={() => setCategoriaSelecionada(item)}
-              >
-                <Text
-                  style={[
-                    styles.categoryChipText,
-                    selected && styles.categoryChipTextSelected,
-                  ]}
-                >
-                  {item}
-                </Text>
-              </TouchableOpacity>
-            );
-          }}
-        />
-      </View>
-
-      {loading ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#2E7D32" />
-          <Text style={styles.loadingText}>Carregando anúncios...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={anunciosFiltrados}
-          keyExtractor={(item) => item.id_anuncio.toString()}
-          renderItem={renderItem}
-          contentContainerStyle={styles.listContainer}
-          refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} colors={['#2E7D32']} />
-          }
-          ListEmptyComponent={
-            <View style={styles.emptyContainer}>
-              <MaterialCommunityIcons name="package-variant" size={60} color="#BDBDBD" />
-              <Text style={styles.emptyTitle}>Nenhum anúncio encontrado</Text>
-              <Text style={styles.emptySubtitle}>
-                Tente mudar os filtros de categoria ou o termo da busca.
-              </Text>
-            </View>
-          }
-        />
-      )}
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#F4F9F4' },
-  header: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 20, paddingTop: 16, paddingBottom: 12 },
-  backButton: { padding: 8, marginRight: 8, borderRadius: 8, backgroundColor: '#E8F5E9' },
-  headerTitle: { fontSize: 20, fontWeight: 'bold', color: '#1B5E20' },
-  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#FFF', marginHorizontal: 20, marginBottom: 12, paddingHorizontal: 12, paddingVertical: 10, borderRadius: 12, borderWidth: 1, borderColor: '#E8F5E9' },
-  searchIcon: { marginRight: 8 },
-  searchInput: { flex: 1, fontSize: 14, color: '#1B241D' },
-  categoriesWrapper: { marginBottom: 12 },
-  categoriesList: { paddingHorizontal: 20, gap: 8 },
-  categoryChip: { paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: '#FFF', borderWidth: 1, borderColor: '#E8F5E9' },
-  categoryChipSelected: { backgroundColor: '#2E7D32', borderColor: '#2E7D32' },
-  categoryChipText: { fontSize: 13, color: '#666', fontWeight: '500' },
-  categoryChipTextSelected: { color: '#FFF', fontWeight: 'bold' },
-  listContainer: { paddingHorizontal: 20, paddingBottom: 24, gap: 16 },
-  card: { backgroundColor: '#FFF', borderRadius: 16, overflow: 'hidden', borderWidth: 1, borderColor: '#E8F5E9', elevation: 2 },
-  imageContainer: { height: 140, width: '100%', backgroundColor: '#F1F7EE', position: 'relative', justifyContent: 'center', alignItems: 'center' },
-  cardImage: { width: '100%', height: '100%', resizeMode: 'cover' },
-  placeholderImage: { alignItems: 'center', justifyContent: 'center' },
+  container: {
+    flex: 1,
+    backgroundColor: '#F8FAFC',
+  },
+  mainContent: {
+    flex: 1,
+    maxWidth: 1200,
+    width: '100%',
+    alignSelf: 'center',
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: Platform.OS === 'android' ? 18 : 12,
+    paddingBottom: 16,
+    gap: 12,
+  },
+  backButton: {
+    padding: 10,
+    borderRadius: 12,
+    backgroundColor: '#DCFCE7',
+  },
+  headerTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#0F172A',
+    letterSpacing: -0.3,
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+    marginTop: 2,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    marginHorizontal: 20,
+    marginBottom: 18,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#000',
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.03,
+        shadowRadius: 6,
+      },
+      android: {
+        elevation: 1,
+      },
+      web: {
+        boxShadow: '0px 2px 8px rgba(0, 0, 0, 0.03)',
+      },
+    }),
+  },
+  searchIcon: {
+    marginRight: 10,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 14,
+    color: '#0F172A',
+  },
+  categoriesWrapper: {
+    marginBottom: 20,
+  },
+  categoriesList: {
+    paddingHorizontal: 20,
+    gap: 10,
+  },
+  categoryChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    paddingHorizontal: 18,
+    paddingVertical: 10,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+  },
+  categoryChipSelected: {
+    backgroundColor: '#16A34A',
+    borderColor: '#16A34A',
+  },
+  categoryChipText: {
+    fontSize: 13,
+    color: '#64748B',
+    fontWeight: '600',
+  },
+  categoryChipTextSelected: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+  },
+  listContainer: {
+    paddingHorizontal: 20,
+    paddingBottom: 40,
+    paddingTop: 4,
+  },
+  columnWrapper: {
+    justify: 'flex-start',
+    gap: 20,
+  },
+  cardWrapper: {
+    paddingBottom: 20,
+  },
+  card: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 16,
+    overflow: 'hidden',
+    borderWidth: 1,
+    borderColor: '#E2E8F0',
+    ...Platform.select({
+      ios: {
+        shadowColor: '#0F172A',
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.06,
+        shadowRadius: 10,
+      },
+      android: {
+        elevation: 2,
+      },
+      web: {
+        boxShadow: '0px 4px 12px rgba(15, 23, 42, 0.06)',
+      },
+    }),
+  },
+  imageContainer: {
+    height: 170,
+    width: '100%',
+    backgroundColor: '#F1F5F9',
+    position: 'relative',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  cardImage: {
+    width: '100%',
+    height: '100%',
+    resizeMode: 'cover',
+  },
+  placeholderImage: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
+    height: '100%',
+    backgroundColor: '#F0FDF4',
+  },
+  categoryBadge: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(22, 163, 74, 0.92)',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 12,
+  },
+  categoryBadgeText: {
+    color: '#FFFFFF',
+    fontSize: 11,
+    fontWeight: '700',
+  },
   favoriteButtonWrap: {
     position: 'absolute',
     top: 12,
@@ -380,42 +591,173 @@ const styles = StyleSheet.create({
     zIndex: 2,
   },
   favoriteButton: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.96)',
-    justifyContent: 'center',
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    padding: 8,
+    borderRadius: 20,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: 'rgba(46, 125, 50, 0.12)',
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.12,
-    shadowRadius: 4,
-    elevation: 3,
+    justifyContent: 'center',
   },
   favoriteButtonFavoritado: {
-    backgroundColor: '#FFF3F3',
-    borderColor: 'rgba(211, 47, 47, 0.18)',
+    backgroundColor: '#FEE2E2',
   },
-  categoryBadge: { position: 'absolute', top: 10, left: 10, backgroundColor: 'rgba(27, 94, 32, 0.85)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
-  categoryBadgeText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
-  cardBody: { padding: 16 },
-  cardTitle: { fontSize: 17, fontWeight: 'bold', color: '#1B241D', marginBottom: 4 },
-  materialText: { fontSize: 13, color: '#666', marginBottom: 12 },
-  materialHighlight: { fontWeight: '600', color: '#2E7D32' },
-  infoRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 },
-  qtdTag: { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#F4F9F4', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 6 },
-  qtdText: { fontSize: 13, fontWeight: '600', color: '#555' },
-  priceText: { fontSize: 18, fontWeight: 'bold', color: '#1B5E20' },
-  sellerRow: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', paddingTop: 12, borderTopWidth: 1, borderTopColor: '#F0F4F0' },
-  sellerInfo: { flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 },
-  sellerName: { fontSize: 13, color: '#666', fontWeight: '500', flex: 1 },
-  chatButton: { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#2E7D32', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
-  chatButtonText: { color: '#FFF', fontSize: 12, fontWeight: 'bold' },
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center' },
-  loadingText: { marginTop: 12, color: '#666', fontSize: 14 },
-  emptyContainer: { alignItems: 'center', justifyContent: 'center', paddingTop: 60 },
-  emptyTitle: { fontSize: 16, fontWeight: 'bold', color: '#555', marginTop: 12 },
-  emptySubtitle: { fontSize: 13, color: '#888', textAlign: 'center', marginTop: 4 },
+  cardBody: {
+    padding: 18,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#0F172A',
+    marginBottom: 10,
+    lineHeight: 22,
+  },
+  materialRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 14,
+  },
+  materialLabel: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  materialBadge: {
+    backgroundColor: '#ECFDF5',
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#A7F3D0',
+    maxWidth: '75%',
+  },
+  materialBadgeText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#047857',
+  },
+  infoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  qtdTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  qtdText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#334155',
+  },
+  priceText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#16A34A',
+  },
+  sellerRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: 14,
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderTopColor: '#F1F5F9',
+  },
+  sellerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    flex: 1,
+    marginRight: 8,
+  },
+  sellerAvatar: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#DCFCE7',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  sellerAvatarText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#16A34A',
+  },
+  sellerDetails: {
+    flex: 1,
+  },
+  sellerName: {
+    fontSize: 12,
+    color: '#334155',
+    fontWeight: '600',
+  },
+  ratingContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 2,
+    marginTop: 1,
+  },
+  ratingText: {
+    fontSize: 11,
+    color: '#F59E0B',
+    fontWeight: '700',
+  },
+  chatButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    backgroundColor: '#16A34A',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  chatButtonText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingVertical: 60,
+  },
+  loadingText: {
+    marginTop: 12,
+    color: '#64748B',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  emptyContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 60,
+    paddingHorizontal: 20,
+  },
+  emptyIconCircle: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#F1F5F9',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: '700',
+    color: '#334155',
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: '#94A3B8',
+    textAlign: 'center',
+    marginTop: 4,
+    maxWidth: 300,
+  },
 });
