@@ -279,7 +279,7 @@ app.post('/anuncios', (req, res) => {
   );
 });
 
-// --- ROTAS DE MATERIAIS ---
+// --- ROTAS DE MATERIAIS E FAVORITOS ---
 
 app.get('/materiais', (req, res) => {
   db.query('SELECT id_material, material_nome, categoria, unidade_medida FROM material ORDER BY material_nome ASC', (err, results) => {
@@ -288,6 +288,110 @@ app.get('/materiais', (req, res) => {
       return res.status(500).json({ mensagem: 'Erro interno ao buscar materiais.' });
     }
     res.json(results);
+  });
+});
+
+app.get('/favoritos/:id_usuario', (req, res) => {
+  const { id_usuario } = req.params;
+
+  const query = `
+    SELECT
+      f.id_favorito,
+      f.criado_em AS favorito_em,
+      a.id_anuncio,
+      a.anuncio_titulo,
+      a.descricao,
+      a.quantidade,
+      a.preco,
+      a.status,
+      a.criado_em,
+      m.material_nome,
+      m.categoria,
+      m.unidade_medida,
+      u.id_usuario,
+      u.usuario_nome AS vendedor_nome,
+      (
+        SELECT img.anuncio_caminho_imagem
+        FROM imagens_anuncio img
+        WHERE img.id_anuncio = a.id_anuncio
+        ORDER BY img.ordem ASC LIMIT 1
+      ) AS imagem_capa
+    FROM favorito f
+    INNER JOIN anuncio a ON a.id_anuncio = f.id_anuncio
+    INNER JOIN material m ON m.id_material = a.id_material
+    INNER JOIN usuario u ON u.id_usuario = a.id_usuario
+    WHERE f.id_usuario = ?
+    ORDER BY f.criado_em DESC
+  `;
+
+  db.query(query, [id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar favoritos:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao buscar favoritos.' });
+    }
+
+    res.json(results);
+  });
+});
+
+app.get('/favoritos/:id_usuario/:id_anuncio', (req, res) => {
+  const { id_usuario, id_anuncio } = req.params;
+
+  const query = 'SELECT id_favorito FROM favorito WHERE id_usuario = ? AND id_anuncio = ? LIMIT 1';
+
+  db.query(query, [id_usuario, id_anuncio], (err, results) => {
+    if (err) {
+      console.error('Erro ao verificar favorito:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao verificar favorito.' });
+    }
+
+    res.json({ favoritado: results.length > 0 });
+  });
+});
+
+app.post('/favoritos', (req, res) => {
+  const { id_usuario, id_anuncio } = req.body;
+
+  if (!id_usuario || !id_anuncio) {
+    return res.status(400).json({ mensagem: 'Usuário e anúncio são obrigatórios.' });
+  }
+
+  const checkQuery = 'SELECT id_favorito FROM favorito WHERE id_usuario = ? AND id_anuncio = ? LIMIT 1';
+
+  db.query(checkQuery, [id_usuario, id_anuncio], (err, results) => {
+    if (err) {
+      console.error('Erro ao verificar favorito existente:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao atualizar favorito.' });
+    }
+
+    if (results.length > 0) {
+      const deleteQuery = 'DELETE FROM favorito WHERE id_favorito = ?';
+      return db.query(deleteQuery, [results[0].id_favorito], (deleteErr) => {
+        if (deleteErr) {
+          console.error('Erro ao remover favorito:', deleteErr);
+          return res.status(500).json({ mensagem: 'Erro ao remover favorito.' });
+        }
+
+        return res.status(200).json({
+          mensagem: 'Anúncio removido dos favoritos.',
+          favoritado: false,
+        });
+      });
+    }
+
+    const insertQuery = 'INSERT INTO favorito (id_usuario, id_anuncio) VALUES (?, ?)';
+    db.query(insertQuery, [id_usuario, id_anuncio], (insertErr, insertResults) => {
+      if (insertErr) {
+        console.error('Erro ao salvar favorito:', insertErr);
+        return res.status(500).json({ mensagem: 'Erro ao salvar favorito.' });
+      }
+
+      res.status(201).json({
+        mensagem: 'Anúncio adicionado aos favoritos.',
+        favoritado: true,
+        id_favorito: insertResults.insertId,
+      });
+    });
   });
 });
 
@@ -598,6 +702,94 @@ app.post('/usuario/redefinir_senha', async (req, res) => {
   });
 });
 
+// --- ROTAS DE COLETA ---
+
+app.get('/coletas/usuario/:id_usuario', (req, res) => {
+  const { id_usuario } = req.params;
+  const query = `
+    SELECT c.id_coleta, c.data_coleta, c.status, a.anuncio_titulo, a.quantidade,
+      m.material_nome, m.unidade_medida, e.logradouro, e.cidade, e.estado
+    FROM coleta c
+    INNER JOIN transacao t ON c.id_transacao = t.id_transacao
+    INNER JOIN anuncio a ON t.id_anuncio = a.id_anuncio
+    INNER JOIN material m ON a.id_material = m.id_material
+    LEFT JOIN endereco e ON c.id_endereco = e.id_endereco
+    WHERE t.id_comprador = ? OR a.id_usuario = ?
+    ORDER BY c.id_coleta DESC
+  `;
+
+  db.query(query, [id_usuario, id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar coletas:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao buscar coletas.' });
+    }
+    res.json(results);
+  });
+});
+
+app.get('/transacoes/usuario/:id_usuario/disponiveis', (req, res) => {
+  const { id_usuario } = req.params;
+  const query = `
+    SELECT t.id_transacao, a.anuncio_titulo, m.material_nome
+    FROM transacao t
+    INNER JOIN anuncio a ON t.id_anuncio = a.id_anuncio
+    INNER JOIN material m ON a.id_material = m.id_material
+    LEFT JOIN coleta c ON c.id_transacao = t.id_transacao
+    WHERE c.id_coleta IS NULL AND (t.id_comprador = ? OR a.id_usuario = ?)
+    ORDER BY t.id_transacao DESC
+  `;
+
+  db.query(query, [id_usuario, id_usuario], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar transações:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+    res.json(results);
+  });
+});
+
+app.post('/coletas', (req, res) => {
+  const { id_transacao, id_endereco, data_coleta } = req.body;
+
+  if (!id_transacao || !id_endereco || !data_coleta) {
+    return res.status(400).json({ mensagem: 'Transação, endereço e data são obrigatórios.' });
+  }
+
+  const query = "INSERT INTO coleta (id_transacao, id_endereco, data_coleta, status) VALUES (?, ?, ?, 'agendada')";
+
+  db.query(query, [id_transacao, id_endereco, data_coleta], (err, results) => {
+    if (err) {
+      if (err.code === 'ER_DUP_ENTRY') {
+        return res.status(409).json({ mensagem: 'Esta transação já tem uma coleta.' });
+      }
+      console.error('Erro ao agendar coleta:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao agendar coleta.' });
+    }
+    res.status(201).json({ mensagem: 'Coleta agendada com sucesso!', id_coleta: results.insertId });
+  });
+});
+
+app.put('/coletas/:id/status', (req, res) => {
+  const { id } = req.params;
+  const { status } = req.body;
+
+  const statusValidos = ['agendada', 'em_andamento', 'concluida', 'cancelada'];
+  if (!statusValidos.includes(status)) {
+    return res.status(400).json({ mensagem: 'Status inválido.' });
+  }
+
+  db.query('UPDATE coleta SET status = ? WHERE id_coleta = ?', [status, id], (err, results) => {
+    if (err) {
+      console.error('Erro ao atualizar coleta:', err);
+      return res.status(500).json({ mensagem: 'Erro interno ao atualizar coleta.' });
+    }
+    if (results.affectedRows === 0) {
+      return res.status(404).json({ mensagem: 'Coleta não encontrada.' });
+    }
+    res.json({ mensagem: 'Status atualizado com sucesso!' });
+  });
+});
+
 // --- ROTAS DE MENSAGENS (CHAT) ---
 
 app.get('/mensagens', (req, res) => {
@@ -859,6 +1051,60 @@ app.get('/transacoes', (req, res) => {
       return res.status(500).json({ mensagem: 'Erro interno ao buscar transações.' });
     }
     res.json(results);
+  });
+});
+
+app.post('/transacoes', (req, res) => {
+  const { id_anuncio, id_comprador } = req.body;
+
+  if (!id_anuncio || !id_comprador) {
+    return res.status(400).json({ mensagem: 'Anúncio e comprador são obrigatórios.' });
+  }
+
+  db.query('SELECT id_usuario, preco, status FROM anuncio WHERE id_anuncio = ?', [id_anuncio], (err, results) => {
+    if (err) {
+      console.error('Erro ao buscar anúncio:', err);
+      return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+    }
+
+    if (results.length === 0) {
+      return res.status(404).json({ mensagem: 'Anúncio não encontrado.' });
+    }
+
+    const anuncio = results[0];
+
+    if (anuncio.status !== 'ativo') {
+      return res.status(400).json({ mensagem: 'Este anúncio não está mais disponível.' });
+    }
+
+    if (anuncio.id_usuario === Number(id_comprador)) {
+      return res.status(400).json({ mensagem: 'Você não pode comprar o seu próprio anúncio.' });
+    }
+
+    const queryExistente = "SELECT id_transacao FROM transacao WHERE id_anuncio = ? AND id_comprador = ? AND status <> 'cancelada'";
+    db.query(queryExistente, [id_anuncio, id_comprador], (err, existentes) => {
+      if (err) {
+        console.error('Erro ao verificar transação:', err);
+        return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
+      }
+
+      if (existentes.length > 0) {
+        return res.status(409).json({ mensagem: 'Você já tem uma compra em andamento para este anúncio.' });
+      }
+
+      const queryInsert = "INSERT INTO transacao (id_anuncio, id_comprador, valor_total, status) VALUES (?, ?, ?, 'pendente')";
+      db.query(queryInsert, [id_anuncio, id_comprador, anuncio.preco], (err, resultado) => {
+        if (err) {
+          console.error('Erro ao criar transação:', err);
+          return res.status(500).json({ mensagem: 'Erro interno ao registrar a compra.' });
+        }
+
+        res.status(201).json({
+          mensagem: 'Compra registrada com sucesso!',
+          id_transacao: resultado.insertId
+        });
+      });
+    });
   });
 });
 
