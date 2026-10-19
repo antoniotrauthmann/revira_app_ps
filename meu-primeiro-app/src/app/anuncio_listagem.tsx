@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
   StyleSheet,
   Text,
@@ -11,9 +11,11 @@ import {
   ActivityIndicator,
   RefreshControl,
   Platform,
+  Animated,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config/api';
 
 interface Anuncio {
@@ -37,10 +39,29 @@ const CATEGORIAS_FILTRO = ['Todos', 'Papel', 'Plástico', 'Vidro', 'Metal', 'Ele
 export default function AnunciosScreen() {
   const router = useRouter();
   const [anuncios, setAnuncios] = useState<Anuncio[]>([]);
+  const [favoritos, setFavoritos] = useState<number[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [busca, setBusca] = useState('');
   const [categoriaSelecionada, setCategoriaSelecionada] = useState('Todos');
+  const buttonPulseRefs = useRef<Record<number, Animated.Value>>({});
+
+  const triggerButtonPulse = (idAnuncio: number) => {
+    const pulse = buttonPulseRefs.current[idAnuncio] || (buttonPulseRefs.current[idAnuncio] = new Animated.Value(1));
+
+    Animated.sequence([
+      Animated.timing(pulse, {
+        toValue: 1.35,
+        duration: 110,
+        useNativeDriver: true,
+      }),
+      Animated.timing(pulse, {
+        toValue: 1,
+        duration: 180,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  };
 
   const carregarAnuncios = useCallback(async () => {
     try {
@@ -59,9 +80,71 @@ export default function AnunciosScreen() {
     }
   }, []);
 
+  const carregarFavoritos = useCallback(async () => {
+    try {
+      const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+      if (!dadosSalvos) {
+        setFavoritos([]);
+        return;
+      }
+
+      const usuario = JSON.parse(dadosSalvos);
+      const response = await fetch(`${API_BASE_URL}/favoritos/${usuario.id_usuario}`);
+
+      if (!response.ok) {
+        return;
+      }
+
+      const data = await response.json();
+      setFavoritos(data.map((item: { id_anuncio: number }) => item.id_anuncio));
+    } catch (error) {
+      console.error('Erro ao buscar favoritos:', error);
+    }
+  }, []);
+
   useEffect(() => {
     carregarAnuncios();
-  }, [carregarAnuncios]);
+    carregarFavoritos();
+  }, [carregarAnuncios, carregarFavoritos]);
+
+  const toggleFavorito = async (idAnuncio: number) => {
+    try {
+      const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+
+      if (!dadosSalvos) {
+        Platform.OS === 'web' ? alert('Faça login para salvar favoritos.') : null;
+        return;
+      }
+
+      const usuario = JSON.parse(dadosSalvos);
+      const response = await fetch(`${API_BASE_URL}/favoritos`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          id_usuario: usuario.id_usuario,
+          id_anuncio: idAnuncio,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.mensagem || 'Erro ao atualizar favorito');
+      }
+
+      triggerButtonPulse(idAnuncio);
+      setFavoritos((prev) =>
+        data.favoritado ? [...new Set([...prev, idAnuncio])] : prev.filter((id) => id !== idAnuncio)
+      );
+    } catch (error) {
+      console.error('Erro ao favoritar anúncio:', error);
+      if (Platform.OS === 'web') {
+        alert('Não foi possível atualizar o favorito.');
+      }
+    }
+  };
 
   const onRefresh = () => {
     setRefreshing(true);
@@ -101,7 +184,11 @@ export default function AnunciosScreen() {
     return bateCategoria && bateBusca;
   });
 
-  const renderItem = ({ item }: { item: Anuncio }) => (
+  const renderItem = ({ item }: { item: Anuncio }) => {
+    const estaFavoritado = favoritos.includes(item.id_anuncio);
+    const pulse = buttonPulseRefs.current[item.id_anuncio] || (buttonPulseRefs.current[item.id_anuncio] = new Animated.Value(1));
+
+    return (
     <TouchableOpacity
       style={styles.card}
       activeOpacity={0.85}
@@ -119,6 +206,21 @@ export default function AnunciosScreen() {
             />
           </View>
         )}
+
+        <Animated.View style={[styles.favoriteButtonWrap, { transform: [{ scale: pulse }] }]}>
+          <TouchableOpacity
+            style={[styles.favoriteButton, estaFavoritado && styles.favoriteButtonFavoritado]}
+            activeOpacity={0.8}
+            onPress={() => toggleFavorito(item.id_anuncio)}
+          >
+            <MaterialCommunityIcons
+              name={estaFavoritado ? 'heart' : 'heart-outline'}
+              size={18}
+              color={estaFavoritado ? '#D32F2F' : '#2E7D32'}
+            />
+          </TouchableOpacity>
+        </Animated.View>
+
         <View style={styles.categoryBadge}>
           <Text style={styles.categoryBadgeText}>{item.categoria}</Text>
         </View>
@@ -167,7 +269,8 @@ export default function AnunciosScreen() {
         </View>
       </View>
     </TouchableOpacity>
-  );
+    );
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -270,7 +373,32 @@ const styles = StyleSheet.create({
   imageContainer: { height: 140, width: '100%', backgroundColor: '#F1F7EE', position: 'relative', justifyContent: 'center', alignItems: 'center' },
   cardImage: { width: '100%', height: '100%', resizeMode: 'cover' },
   placeholderImage: { alignItems: 'center', justifyContent: 'center' },
-  categoryBadge: { position: 'absolute', top: 10, right: 10, backgroundColor: 'rgba(27, 94, 32, 0.85)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
+  favoriteButtonWrap: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 2,
+  },
+  favoriteButton: {
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.96)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(46, 125, 50, 0.12)',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  favoriteButtonFavoritado: {
+    backgroundColor: '#FFF3F3',
+    borderColor: 'rgba(211, 47, 47, 0.18)',
+  },
+  categoryBadge: { position: 'absolute', top: 10, left: 10, backgroundColor: 'rgba(27, 94, 32, 0.85)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12 },
   categoryBadgeText: { color: '#FFF', fontSize: 11, fontWeight: 'bold' },
   cardBody: { padding: 16 },
   cardTitle: { fontSize: 17, fontWeight: 'bold', color: '#1B241D', marginBottom: 4 },
