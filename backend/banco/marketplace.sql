@@ -271,6 +271,69 @@ CREATE TABLE `usuario` (
   `data_cadastro` datetime NOT NULL DEFAULT current_timestamp()
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
 
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `sessao_usuario`
+--
+
+CREATE TABLE `sessao_usuario` (
+  `id_sessao` int(11) NOT NULL,
+  `id_usuario` int(11) NOT NULL,
+  `token_hash` char(64) NOT NULL,
+  `dispositivo` varchar(120) NOT NULL,
+  `criado_em` datetime NOT NULL DEFAULT current_timestamp(),
+  `ultimo_acesso` datetime NOT NULL DEFAULT current_timestamp(),
+  `expira_em` datetime NOT NULL,
+  `revogado_em` datetime DEFAULT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `preferencia_notificacao`
+--
+
+CREATE TABLE `preferencia_notificacao` (
+  `id_usuario` int(11) NOT NULL,
+  `categoria` varchar(40) NOT NULL,
+  `habilitada` tinyint(1) NOT NULL,
+  `atualizado_em` datetime NOT NULL DEFAULT current_timestamp() ON UPDATE current_timestamp()
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `dispositivo_notificacao`
+--
+
+CREATE TABLE `dispositivo_notificacao` (
+  `id_dispositivo` int(11) NOT NULL,
+  `id_usuario` int(11) NOT NULL,
+  `id_sessao` int(11) NOT NULL,
+  `expo_push_token` varchar(255) NOT NULL,
+  `dispositivo` varchar(120) NOT NULL,
+  `criado_em` datetime NOT NULL DEFAULT current_timestamp(),
+  `ativo` tinyint(1) NOT NULL DEFAULT 1
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+-- --------------------------------------------------------
+
+--
+-- Indexes for table `preferencia_notificacao`
+--
+ALTER TABLE `preferencia_notificacao`
+  ADD PRIMARY KEY (`id_usuario`,`categoria`);
+
+--
+-- Indexes for table `dispositivo_notificacao`
+--
+ALTER TABLE `dispositivo_notificacao`
+  ADD PRIMARY KEY (`id_dispositivo`),
+  ADD UNIQUE KEY `uk_dispositivo_push_token` (`expo_push_token`),
+  ADD UNIQUE KEY `uk_dispositivo_sessao` (`id_sessao`),
+  ADD KEY `idx_dispositivo_usuario` (`id_usuario`);
+
 --
 -- Indexes for dumped tables
 --
@@ -398,6 +461,29 @@ ALTER TABLE `usuario`
   ADD UNIQUE KEY `cpf_cnpj` (`cpf_cnpj`);
 
 --
+-- Indexes for table `sessao_usuario`
+--
+ALTER TABLE `sessao_usuario`
+  ADD PRIMARY KEY (`id_sessao`),
+  ADD UNIQUE KEY `uk_sessao_token_hash` (`token_hash`),
+  ADD KEY `idx_sessao_usuario` (`id_usuario`);
+
+--
+-- Indexes for table `preferencia_notificacao`
+--
+ALTER TABLE `preferencia_notificacao`
+  ADD PRIMARY KEY (`id_usuario`,`categoria`);
+
+--
+-- Indexes for table `dispositivo_notificacao`
+--
+ALTER TABLE `dispositivo_notificacao`
+  ADD PRIMARY KEY (`id_dispositivo`),
+  ADD UNIQUE KEY `uk_dispositivo_push_token` (`expo_push_token`),
+  ADD UNIQUE KEY `uk_dispositivo_sessao` (`id_sessao`),
+  ADD KEY `idx_dispositivo_usuario` (`id_usuario`);
+
+--
 -- AUTO_INCREMENT for dumped tables
 --
 
@@ -498,6 +584,18 @@ ALTER TABLE `usuario`
   MODIFY `id_usuario` int(11) NOT NULL AUTO_INCREMENT;
 
 --
+-- AUTO_INCREMENT for table `sessao_usuario`
+--
+ALTER TABLE `sessao_usuario`
+  MODIFY `id_sessao` int(11) NOT NULL AUTO_INCREMENT;
+
+--
+-- AUTO_INCREMENT for table `dispositivo_notificacao`
+--
+ALTER TABLE `dispositivo_notificacao`
+  MODIFY `id_dispositivo` int(11) NOT NULL AUTO_INCREMENT;
+
+--
 -- Constraints for dumped tables
 --
 
@@ -515,6 +613,25 @@ ALTER TABLE `anuncio`
 ALTER TABLE `assinatura`
   ADD CONSTRAINT `assinatura_plano_fk` FOREIGN KEY (`id_plano`) REFERENCES `plano` (`id_plano`),
   ADD CONSTRAINT `assinatura_usuario_fk` FOREIGN KEY (`id_usuario`) REFERENCES `usuario` (`id_usuario`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `sessao_usuario`
+--
+ALTER TABLE `sessao_usuario`
+  ADD CONSTRAINT `sessao_usuario_fk` FOREIGN KEY (`id_usuario`) REFERENCES `usuario` (`id_usuario`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `preferencia_notificacao`
+--
+ALTER TABLE `preferencia_notificacao`
+  ADD CONSTRAINT `preferencia_notificacao_usuario_fk` FOREIGN KEY (`id_usuario`) REFERENCES `usuario` (`id_usuario`) ON DELETE CASCADE;
+
+--
+-- Constraints for table `dispositivo_notificacao`
+--
+ALTER TABLE `dispositivo_notificacao`
+  ADD CONSTRAINT `dispositivo_notificacao_usuario_fk` FOREIGN KEY (`id_usuario`) REFERENCES `usuario` (`id_usuario`) ON DELETE CASCADE,
+  ADD CONSTRAINT `dispositivo_notificacao_sessao_fk` FOREIGN KEY (`id_sessao`) REFERENCES `sessao_usuario` (`id_sessao`) ON DELETE CASCADE;
 
 --
 -- Constraints for table `avaliacao`

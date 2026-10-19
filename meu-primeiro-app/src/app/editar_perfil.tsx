@@ -100,6 +100,14 @@ export default function EditarPerfilScreen() {
     }
   };
 
+  const handleVoltar = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/profile');
+    }
+  };
+
   const selecionarFoto = async () => {
     try {
       const permissao = await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -198,10 +206,10 @@ export default function EditarPerfilScreen() {
       await AsyncStorage.setItem('@usuario_logado', JSON.stringify(usuarioAtualizado));
       if (Platform.OS === 'web') {
         alert('Perfil atualizado\n\nSeus dados foram atualizados.');
-        router.back();
+        handleVoltar();
       } else {
         Alert.alert('Perfil atualizado', 'Seus dados foram atualizados.', [
-          { text: 'OK', onPress: () => router.back() },
+          { text: 'OK', onPress: handleVoltar },
         ]);
       }
     } catch (error) {
@@ -233,7 +241,7 @@ export default function EditarPerfilScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
         <TouchableOpacity
-          onPress={() => router.back()}
+          onPress={handleVoltar}
           style={styles.backButton}
           accessibilityLabel="Voltar ao perfil"
         >
@@ -459,56 +467,56 @@ const styles = StyleSheet.create({
   formCard: {
     marginHorizontal: 20,
     marginTop: 0,
-    padding: 18,
+    padding: 16,
     backgroundColor: '#FFF',
-    borderRadius: 20,
+    borderRadius: 16,
     borderWidth: 1,
     borderColor: '#E8F5E9',
-    elevation: 2,
-    shadowColor: '#1B5E20',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
+    elevation: 1,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 4,
   },
   description: {
-    color: '#78909C',
-    fontSize: 14,
-    lineHeight: 20,
-    marginBottom: 16,
+    color: '#718075',
+    fontSize: 13,
+    lineHeight: 19,
+    marginBottom: 14,
   },
   profileCard: {
     marginHorizontal: 20,
-    marginTop: 8,
-    padding: 22,
+    marginTop: 6,
+    padding: 24,
     alignItems: 'center',
     backgroundColor: '#FFF',
     borderRadius: 20,
     borderWidth: 1,
     borderColor: '#E8F5E9',
-    elevation: 2,
+    elevation: 3,
     shadowColor: '#1B5E20',
-    shadowOffset: { width: 0, height: 3 },
+    shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
-    shadowRadius: 10,
+    shadowRadius: 12,
   },
   avatarGradient: {
-    width: 104,
-    height: 104,
-    borderRadius: 52,
+    width: 88,
+    height: 88,
+    borderRadius: 44,
     backgroundColor: '#2E7D32',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
-    elevation: 3,
+    marginBottom: 14,
+    elevation: 4,
     shadowColor: '#2E7D32',
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.2,
-    shadowRadius: 7,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
   photoPreview: {
-    width: 94,
-    height: 94,
-    borderRadius: 47,
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     backgroundColor: '#43A047',
     borderWidth: 3,
     borderColor: '#FFF',
@@ -519,7 +527,7 @@ const styles = StyleSheet.create({
   photoImage: {
     width: '100%',
     height: '100%',
-    borderRadius: 47,
+    borderRadius: 40,
   },
   cameraBadge: {
     position: 'absolute',
@@ -536,15 +544,15 @@ const styles = StyleSheet.create({
   },
   userName: {
     color: '#1B5E20',
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '700',
     textAlign: 'center',
+    marginBottom: 4,
   },
   userEmail: {
     color: '#78909C',
-    fontSize: 13,
-    marginTop: 4,
-    marginBottom: 14,
+    fontSize: 14,
+    marginBottom: 12,
   },
   photoButton: {
     flexDirection: 'row',
@@ -564,10 +572,11 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   photoHint: {
-    color: '#90A4AE',
-    fontSize: 11,
+    color: '#718075',
+    fontSize: 12,
     marginTop: 10,
     textAlign: 'center',
+    lineHeight: 16,
   },
   removePhotoButton: {
     padding: 8,
@@ -580,29 +589,29 @@ const styles = StyleSheet.create({
   sectionTitleContainer: {
     paddingHorizontal: 24,
     paddingTop: 22,
-    paddingBottom: 8,
+    paddingBottom: 9,
   },
   sectionTitle: {
-    color: '#90A4AE',
-    fontSize: 13,
+    color: '#1B5E20',
+    fontSize: 14,
     fontWeight: '700',
-    letterSpacing: 1.1,
+    letterSpacing: 1.2,
     textTransform: 'uppercase',
   },
   label: {
     color: '#263238',
     fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
+    fontWeight: '700',
+    marginBottom: 9,
   },
   inputContainer: {
     minHeight: 52,
     flexDirection: 'row',
     alignItems: 'center',
-    borderRadius: 13,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: '#DCE8DD',
-    backgroundColor: '#FAFCFA',
+    borderColor: '#E0E8E1',
+    backgroundColor: '#F9FBF9',
     paddingHorizontal: 13,
   },
   inputIcon: {
@@ -622,27 +631,27 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   fieldHelper: {
-    color: '#90A4AE',
+    color: '#718075',
     fontSize: 12,
   },
   characterCount: {
-    color: '#90A4AE',
-    fontSize: 11,
+    color: '#718075',
+    fontSize: 12,
   },
   accountTypes: {
-    gap: 9,
+    gap: 8,
   },
   accountTypeOption: {
-    minHeight: 58,
+    minHeight: 56,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     paddingVertical: 8,
     paddingHorizontal: 10,
-    borderRadius: 14,
+    borderRadius: 13,
     borderWidth: 1,
-    borderColor: '#DCE8DD',
-    backgroundColor: '#FAFCFA',
+    borderColor: '#E0E8E1',
+    backgroundColor: '#F9FBF9',
   },
   accountTypeOptionSelected: {
     borderColor: '#2E7D32',
@@ -651,17 +660,17 @@ const styles = StyleSheet.create({
   accountTypeIcon: {
     width: 38,
     height: 38,
-    borderRadius: 12,
+    borderRadius: 13,
     alignItems: 'center',
     justifyContent: 'center',
-    backgroundColor: '#ECEFF1',
+    backgroundColor: '#E8F5E9',
   },
   accountTypeIconSelected: {
     backgroundColor: '#C8E6C9',
   },
   accountTypeText: {
     flex: 1,
-    color: '#546E7A',
+    color: '#263238',
     fontSize: 14,
   },
   accountTypeTextSelected: {
@@ -669,7 +678,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   adminNotice: {
-    color: '#78909C',
+    color: '#718075',
     fontSize: 13,
     flex: 1,
     lineHeight: 18,
@@ -680,7 +689,7 @@ const styles = StyleSheet.create({
     gap: 10,
     padding: 14,
     borderRadius: 12,
-    backgroundColor: '#F4F7F8',
+    backgroundColor: '#F4F9F4',
   },
   saveButton: {
     minHeight: 52,
@@ -691,7 +700,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     borderRadius: 14,
     backgroundColor: '#2E7D32',
-    marginTop: 22,
+    marginTop: 20,
   },
   saveButtonDisabled: {
     opacity: 0.7,

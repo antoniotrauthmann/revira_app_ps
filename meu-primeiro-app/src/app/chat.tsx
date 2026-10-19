@@ -7,6 +7,7 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config/api';
+import { getSessionToken } from '../config/session';
 
 interface Message {
   id: string;
@@ -53,7 +54,11 @@ export default function ChatScreen() {
 
   const fetchMessages = async () => {
     try {
-      const response = await fetch(API_URL);
+      const token = await getSessionToken();
+      if (!token) return;
+      const response = await fetch(API_URL, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
       const data = await response.json();
       
       if (response.ok) {
@@ -96,16 +101,23 @@ export default function ChatScreen() {
   };
 
   const enviarMensagemParaServidor = async (texto: string, imagemUrl: string | null) => {
-    const remetenteId = userId || 3; // Usa o ID atual (3) ou 1 como segurança
+    const remetenteId = userId;
+    const token = await getSessionToken();
+    if (!remetenteId || !token) {
+      Alert.alert('Sessão necessária', 'Entre novamente para enviar mensagens.');
+      return;
+    }
     const destinatarioId = remetenteId; // Envia para si mesmo para evitar erro de destinatário inexistente
 
     try {
       const response = await fetch(API_URL, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
           conteudo: texto,
-          id_remetente: remetenteId,     
           id_destinatario: destinatarioId,  
           url_imagem: imagemUrl,
         }),

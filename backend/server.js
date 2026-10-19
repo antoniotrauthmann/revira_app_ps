@@ -18,13 +18,32 @@ app.use(express.urlencoded({ limit: '10mb', extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Conexão com o MySQL do XAMPP
-const db = mysql.createConnection({
+const databaseConfig = {
   host: 'localhost',
   user: 'root',      
   port: 3307,
   password: '',      
   database: 'marketplace'
-});
+};
+const db = mysql.createConnection(databaseConfig);
+const transactionPool = mysql.createPool(databaseConfig);
+
+let sessionsSchemaReady = false;
+let notificationSchemaReady = false;
+const NOTIFICATION_CATEGORIES = [
+  'messages',
+  'security',
+  'listings',
+  'transactions',
+  'product_updates',
+];
+const DEFAULT_NOTIFICATION_PREFERENCES = {
+  messages: true,
+  security: true,
+  listings: true,
+  transactions: true,
+  product_updates: false,
+};
 
 db.connect((err) => {
   if (err) {
@@ -32,7 +51,185 @@ db.connect((err) => {
     return;
   }
   console.log('Conectado ao MySQL do XAMPP!');
+  db.query(`
+    CREATE TABLE IF NOT EXISTS sessao_usuario (
+      id_sessao int(11) NOT NULL AUTO_INCREMENT,
+      id_usuario int(11) NOT NULL,
+      token_hash char(64) NOT NULL,
+      dispositivo varchar(120) NOT NULL,
+      criado_em datetime NOT NULL DEFAULT current_timestamp(),
+      ultimo_acesso datetime NOT NULL DEFAULT current_timestamp(),
+      expira_em datetime NOT NULL,
+      revogado_em datetime DEFAULT NULL,
+      PRIMARY KEY (id_sessao),
+      UNIQUE KEY uk_sessao_token_hash (token_hash),
+      KEY idx_sessao_usuario (id_usuario),
+      CONSTRAINT sessao_usuario_fk FOREIGN KEY (id_usuario)
+        REFERENCES usuario (id_usuario) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+  `, (schemaError) => {
+    if (schemaError) {
+      console.error('Erro ao preparar tabela de sessões:', schemaError);
+      return;
+    }
+    sessionsSchemaReady = true;
+    db.query(`
+      CREATE TABLE IF NOT EXISTS preferencia_notificacao (
+        id_usuario int(11) NOT NULL,
+        categoria varchar(40) NOT NULL,
+        habilitada tinyint(1) NOT NULL,
+        atualizado_em datetime NOT NULL DEFAULT current_timestamp()
+          ON UPDATE current_timestamp(),
+        PRIMARY KEY (id_usuario, categoria),
+        CONSTRAINT preferencia_notificacao_usuario_fk FOREIGN KEY (id_usuario)
+          REFERENCES usuario (id_usuario) ON DELETE CASCADE
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    `, (preferenceError) => {
+      if (preferenceError) {
+        console.error('Erro ao preparar preferências de notificação:', preferenceError);
+        return;
+      }
+      db.query(`
+        CREATE TABLE IF NOT EXISTS dispositivo_notificacao (
+          id_dispositivo int(11) NOT NULL AUTO_INCREMENT,
+          id_usuario int(11) NOT NULL,
+          id_sessao int(11) NOT NULL,
+          expo_push_token varchar(255) NOT NULL,
+          dispositivo varchar(120) NOT NULL,
+          criado_em datetime NOT NULL DEFAULT current_timestamp(),
+          ativo tinyint(1) NOT NULL DEFAULT 1,
+          PRIMARY KEY (id_dispositivo),
+          UNIQUE KEY uk_dispositivo_push_token (expo_push_token),
+          UNIQUE KEY uk_dispositivo_sessao (id_sessao),
+          KEY idx_dispositivo_usuario (id_usuario),
+          CONSTRAINT dispositivo_notificacao_usuario_fk FOREIGN KEY (id_usuario)
+            REFERENCES usuario (id_usuario) ON DELETE CASCADE,
+          CONSTRAINT dispositivo_notificacao_sessao_fk FOREIGN KEY (id_sessao)
+            REFERENCES sessao_usuario (id_sessao) ON DELETE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+      `, (deviceError) => {
+        if (deviceError) {
+          console.error('Erro ao preparar dispositivos de notificação:', deviceError);
+          return;
+        }
+        notificationSchemaReady = true;
+      });
+    });
+  });
 });
+
+function autenticarSessao(req, res, next) {
+  if (!sessionsSchemaReady) {
+    return res.status(503).json({ mensagem: 'O serviço de sessões ainda não está disponível.' });
+  }
+  const authorization = req.headers.authorization || '';
+  const tokenMatch = authorization.match(/^Bearer ([a-f0-9]{64})$/i);
+  if (!tokenMatch) {
+    return res.status(401).json({ mensagem: 'Sessão inválida ou expirada.' });
+  }
+
+  const tokenHash = crypto.createHash('sha256').update(tokenMatch[1]).digest('hex');
+  db.query(
+    `SELECT id_sessao, id_usuario
+     FROM sessao_usuario
+     WHERE token_hash = ? AND revogado_em IS NULL AND expira_em > NOW()`,
+    [tokenHash],
+    (err, sessions) => {
+      if (err) {
+        console.error('Erro ao validar sessão:', err);
+        return res.status(500).json({ mensagem: 'Erro interno ao validar a sessão.' });
+      }
+      if (sessions.length === 0) {
+        return res.status(401).json({ mensagem: 'Sessão inválida ou expirada.' });
+      }
+
+      req.sessao = sessions[0];
+      db.query(
+        'UPDATE sessao_usuario SET ultimo_acesso = NOW() WHERE id_sessao = ?',
+        [req.sessao.id_sessao],
+        (updateError) => {
+          if (updateError) {
+            console.error('Erro ao atualizar atividade da sessão:', updateError);
+            return res.status(500).json({ mensagem: 'Erro ao atualizar a sessão.' });
+          }
+          return next();
+        }
+      );
+    }
+  );
+}
+
+function enviarPushParaUsuario(idUsuario, categoria, titulo, corpo, ignorarSessao = null) {
+  if (!notificationSchemaReady) {
+    console.error('Notificação push ignorada: esquema de notificações ainda não está disponível.');
+    return;
+  }
+
+  const filtroSessao = ignorarSessao ? 'AND s.id_sessao <> ?' : '';
+  db.query(
+    `SELECT d.id_dispositivo, d.expo_push_token
+     FROM dispositivo_notificacao d
+     JOIN sessao_usuario s ON s.id_sessao = d.id_sessao
+     LEFT JOIN preferencia_notificacao p
+       ON p.id_usuario = d.id_usuario AND p.categoria = ?
+     WHERE d.id_usuario = ? AND d.ativo = 1
+       AND s.revogado_em IS NULL AND s.expira_em > NOW()
+       AND COALESCE(p.habilitada, ?) = 1
+       ${filtroSessao}`,
+    [categoria, idUsuario, DEFAULT_NOTIFICATION_PREFERENCES[categoria], ...(ignorarSessao ? [ignorarSessao] : [])],
+    async (queryError, devices) => {
+      if (queryError) {
+        console.error('Erro ao selecionar dispositivos para push:', queryError);
+        return;
+      }
+      for (const device of devices) {
+        try {
+          const pushResponse = await fetch('https://exp.host/--/api/v2/push/send', {
+            method: 'POST',
+            headers: {
+              Accept: 'application/json',
+              'Accept-encoding': 'gzip, deflate',
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              to: device.expo_push_token,
+              sound: 'default',
+              title: titulo,
+              body: corpo,
+              data: {
+                categoria,
+                route: {
+                  messages: '/chat',
+                  security: '/privacidade_seguranca',
+                  listings: '/anuncio_listagem',
+                  transactions: '/minhas_avaliacoes',
+                  product_updates: '/home',
+                }[categoria],
+              },
+            }),
+          });
+          if (!pushResponse.ok) {
+            console.error(`Expo Push recusou a notificação (HTTP ${pushResponse.status}).`);
+            continue;
+          }
+          const result = await pushResponse.json();
+          const ticket = result.data;
+          if (ticket?.status === 'error') {
+            if (ticket.details?.error === 'DeviceNotRegistered') {
+              db.query('UPDATE dispositivo_notificacao SET ativo = 0 WHERE id_dispositivo = ?', [device.id_dispositivo], (disableError) => {
+                if (disableError) console.error('Erro ao desativar token push inválido:', disableError);
+              });
+            } else {
+              console.error('Expo Push retornou erro:', ticket.message || ticket.details?.error || 'Erro desconhecido.');
+            }
+          }
+        } catch (pushError) {
+          console.error('Erro ao enviar push pelo Expo:', pushError);
+        }
+      }
+    }
+  );
+}
 
 // --- ROTAS DE USUÁRIO ---
 
@@ -175,7 +372,7 @@ app.put('/usuario/:id', async (req, res) => {
 });
 
 app.post('/usuario/login', (req, res) => {
-  const { email, senha } = req.body;
+  const { email, senha, dispositivo } = req.body;
 
   if (!email || !senha) {
     return res.status(400).json({ mensagem: 'E-mail e senha são obrigatórios.' });
@@ -201,17 +398,382 @@ app.post('/usuario/login', (req, res) => {
         return res.status(401).json({ mensagem: 'E-mail ou senha incorretos.' });
       }
 
-      delete usuario.senha_hash;
+      if (!sessionsSchemaReady) {
+        return res.status(503).json({ mensagem: 'O serviço de sessões ainda não está disponível.' });
+      }
 
-      return res.status(200).json({
-        mensagem: 'Login realizado com sucesso!',
-        usuario
-      });
+      const token = crypto.randomBytes(32).toString('hex');
+      const tokenHash = crypto.createHash('sha256').update(token).digest('hex');
+      const nomeDispositivo = typeof dispositivo === 'string' && dispositivo.trim()
+        ? dispositivo.trim().slice(0, 120)
+        : 'Dispositivo não identificado';
+      db.query(
+        `INSERT INTO sessao_usuario
+          (id_usuario, token_hash, dispositivo, expira_em)
+         VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 30 DAY))`,
+        [usuario.id_usuario, tokenHash, nomeDispositivo],
+        (sessionError, sessionResult) => {
+          if (sessionError) {
+            console.error('Erro ao criar sessão de usuário:', sessionError);
+            return res.status(500).json({ mensagem: 'Não foi possível iniciar uma sessão segura.' });
+          }
+
+          enviarPushParaUsuario(
+            usuario.id_usuario,
+            'security',
+            'Novo acesso à sua conta',
+            `Sua conta foi acessada em ${nomeDispositivo}.`,
+            sessionResult.insertId
+          );
+          delete usuario.senha_hash;
+          return res.status(200).json({
+            mensagem: 'Login realizado com sucesso!',
+            usuario,
+            sessao: {
+              id_sessao: sessionResult.insertId,
+              token,
+              expira_em: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString(),
+            },
+          });
+        }
+      );
     } catch (compareError) {
       console.error('Erro ao comparar senha:', compareError);
       return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
     }
   });
+});
+
+app.get('/usuario/sessoes/ativas', autenticarSessao, (req, res) => {
+  db.query(
+    `SELECT id_sessao, dispositivo, criado_em, ultimo_acesso, expira_em,
+      (id_sessao = ?) AS atual
+     FROM sessao_usuario
+     WHERE id_usuario = ? AND revogado_em IS NULL AND expira_em > NOW()
+     ORDER BY atual DESC, ultimo_acesso DESC`,
+    [req.sessao.id_sessao, req.sessao.id_usuario],
+    (err, sessions) => {
+      if (err) {
+        console.error('Erro ao listar sessões do usuário:', err);
+        return res.status(500).json({ mensagem: 'Não foi possível carregar os dispositivos conectados.' });
+      }
+      return res.json(sessions);
+    }
+  );
+});
+
+app.delete('/usuario/sessoes/:id_sessao', autenticarSessao, (req, res) => {
+  const idSessao = Number(req.params.id_sessao);
+  if (!Number.isInteger(idSessao) || idSessao < 1 || idSessao === req.sessao.id_sessao) {
+    return res.status(400).json({ mensagem: 'Selecione uma sessão diferente da sessão atual.' });
+  }
+
+  db.query(
+    `UPDATE sessao_usuario SET revogado_em = NOW()
+     WHERE id_sessao = ? AND id_usuario = ? AND revogado_em IS NULL`,
+    [idSessao, req.sessao.id_usuario],
+    (err, result) => {
+      if (err) {
+        console.error('Erro ao encerrar sessão remota:', err);
+        return res.status(500).json({ mensagem: 'Não foi possível encerrar essa sessão.' });
+      }
+      if (result.affectedRows === 0) {
+        return res.status(404).json({ mensagem: 'Sessão não encontrada ou já encerrada.' });
+      }
+      db.query(
+        'UPDATE dispositivo_notificacao SET ativo = 0 WHERE id_sessao = ?',
+        [idSessao],
+        (deviceError) => {
+          if (deviceError) {
+            console.error('Erro ao desativar push da sessão encerrada:', deviceError);
+            return res.status(500).json({ mensagem: 'Sessão encerrada, mas houve erro ao desativar o dispositivo push.' });
+          }
+          enviarPushParaUsuario(
+            req.sessao.id_usuario,
+            'security',
+            'Sessão encerrada',
+            'Uma sessão de outro dispositivo foi encerrada.'
+          );
+          return res.json({ mensagem: 'Sessão encerrada.' });
+        }
+      );
+    }
+  );
+});
+
+app.delete('/usuario/sessao-atual', autenticarSessao, (req, res) => {
+  db.query(
+    'UPDATE sessao_usuario SET revogado_em = NOW() WHERE id_sessao = ?',
+    [req.sessao.id_sessao],
+    (err) => {
+      if (err) {
+        console.error('Erro ao encerrar sessão atual:', err);
+        return res.status(500).json({ mensagem: 'Não foi possível encerrar a sessão.' });
+      }
+      db.query(
+        'UPDATE dispositivo_notificacao SET ativo = 0 WHERE id_sessao = ?',
+        [req.sessao.id_sessao],
+        (deviceError) => {
+          if (deviceError) {
+            console.error('Erro ao desativar push da sessão atual:', deviceError);
+            return res.status(500).json({ mensagem: 'Sessão encerrada, mas houve erro ao desativar o dispositivo push.' });
+          }
+          return res.json({ mensagem: 'Sessão encerrada.' });
+        }
+      );
+    }
+  );
+});
+
+app.post('/usuario/sessao-atual/atividade', autenticarSessao, (_req, res) => {
+  return res.status(204).end();
+});
+
+app.get('/usuario/notificacoes/preferencias', autenticarSessao, (req, res) => {
+  if (!notificationSchemaReady) {
+    return res.status(503).json({ mensagem: 'As preferências de notificação ainda não estão disponíveis.' });
+  }
+  db.query(
+    `SELECT categoria, habilitada
+     FROM preferencia_notificacao WHERE id_usuario = ?`,
+    [req.sessao.id_usuario],
+    (preferenceError, preferences) => {
+      if (preferenceError) {
+        console.error('Erro ao carregar preferências de notificação:', preferenceError);
+        return res.status(500).json({ mensagem: 'Não foi possível carregar as preferências.' });
+      }
+      const categories = { ...DEFAULT_NOTIFICATION_PREFERENCES };
+      for (const preference of preferences) {
+        if (Object.prototype.hasOwnProperty.call(categories, preference.categoria)) {
+          categories[preference.categoria] = Boolean(preference.habilitada);
+        }
+      }
+      db.query(
+        'SELECT ativo FROM dispositivo_notificacao WHERE id_sessao = ?',
+        [req.sessao.id_sessao],
+        (deviceError, devices) => {
+          if (deviceError) {
+            console.error('Erro ao buscar inscrição push do dispositivo:', deviceError);
+            return res.status(500).json({ mensagem: 'Não foi possível carregar o estado das notificações push.' });
+          }
+          return res.json({
+            categorias: categories,
+            push_ativo: devices.length > 0 && Boolean(devices[0].ativo),
+          });
+        }
+      );
+    }
+  );
+});
+
+app.put('/usuario/notificacoes/preferencias', autenticarSessao, (req, res) => {
+  if (!notificationSchemaReady) {
+    return res.status(503).json({ mensagem: 'As preferências de notificação ainda não estão disponíveis.' });
+  }
+  const categorias = req.body?.categorias;
+  if (!categorias || typeof categorias !== 'object' || Array.isArray(categorias)) {
+    return res.status(400).json({ mensagem: 'Informe as preferências das categorias de notificação.' });
+  }
+  for (const category of NOTIFICATION_CATEGORIES) {
+    if (typeof categorias[category] !== 'boolean') {
+      return res.status(400).json({ mensagem: `A preferência "${category}" deve ser verdadeira ou falsa.` });
+    }
+  }
+
+  const placeholders = NOTIFICATION_CATEGORIES.map(() => '(?, ?, ?)').join(', ');
+  const values = NOTIFICATION_CATEGORIES.flatMap((category) => [
+    req.sessao.id_usuario,
+    category,
+    categorias[category] ? 1 : 0,
+  ]);
+  db.query(
+    `INSERT INTO preferencia_notificacao (id_usuario, categoria, habilitada)
+     VALUES ${placeholders}
+     ON DUPLICATE KEY UPDATE habilitada = VALUES(habilitada)`,
+    values,
+    (preferenceError) => {
+      if (preferenceError) {
+        console.error('Erro ao salvar preferências de notificação:', preferenceError);
+        return res.status(500).json({ mensagem: 'Não foi possível salvar as preferências.' });
+      }
+      return res.json({ mensagem: 'Preferências de notificação atualizadas.' });
+    }
+  );
+});
+
+app.post('/usuario/notificacoes/dispositivo', autenticarSessao, (req, res) => {
+  if (!notificationSchemaReady) {
+    return res.status(503).json({ mensagem: 'O serviço de notificações ainda não está disponível.' });
+  }
+  const { expo_push_token, dispositivo } = req.body;
+  if (
+    typeof expo_push_token !== 'string' ||
+    !/^Expo(?:nent)?PushToken\[[A-Za-z0-9_-]+\]$/.test(expo_push_token) ||
+    typeof dispositivo !== 'string' ||
+    !dispositivo.trim()
+  ) {
+    return res.status(400).json({ mensagem: 'O token push ou nome do dispositivo é inválido.' });
+  }
+  db.query(
+    `INSERT INTO dispositivo_notificacao
+      (id_usuario, id_sessao, expo_push_token, dispositivo, ativo)
+     VALUES (?, ?, ?, ?, 1)
+     ON DUPLICATE KEY UPDATE
+       id_usuario = VALUES(id_usuario),
+       id_sessao = VALUES(id_sessao),
+       expo_push_token = VALUES(expo_push_token),
+       dispositivo = VALUES(dispositivo),
+       ativo = 1`,
+    [req.sessao.id_usuario, req.sessao.id_sessao, expo_push_token, dispositivo.trim().slice(0, 120)],
+    (deviceError) => {
+      if (deviceError) {
+        console.error('Erro ao registrar dispositivo push:', deviceError);
+        return res.status(500).json({ mensagem: 'Não foi possível registrar este dispositivo.' });
+      }
+      return res.status(201).json({ mensagem: 'Notificações push ativadas neste dispositivo.' });
+    }
+  );
+});
+
+app.delete('/usuario/notificacoes/dispositivo-atual', autenticarSessao, (req, res) => {
+  db.query(
+    'UPDATE dispositivo_notificacao SET ativo = 0 WHERE id_sessao = ? AND id_usuario = ?',
+    [req.sessao.id_sessao, req.sessao.id_usuario],
+    (deviceError) => {
+      if (deviceError) {
+        console.error('Erro ao desativar notificações push:', deviceError);
+        return res.status(500).json({ mensagem: 'Não foi possível desativar notificações push.' });
+      }
+      return res.json({ mensagem: 'Notificações push desativadas neste dispositivo.' });
+    }
+  );
+});
+
+app.delete('/usuario/conta', autenticarSessao, async (req, res) => {
+  if (!notificationSchemaReady) {
+    return res.status(503).json({ mensagem: 'O serviço de privacidade ainda não está disponível.' });
+  }
+  const { senha } = req.body;
+  if (typeof senha !== 'string' || !senha) {
+    return res.status(400).json({ mensagem: 'Informe sua senha atual para confirmar a exclusão da conta.' });
+  }
+
+  db.query(
+    'SELECT usuario_nome, email, senha_hash, cpf_cnpj, foto_perfil FROM usuario WHERE id_usuario = ?',
+    [req.sessao.id_usuario],
+    async (selectError, users) => {
+      if (selectError) {
+        console.error('Erro ao carregar conta para exclusão:', selectError);
+        return res.status(500).json({ mensagem: 'Não foi possível validar a conta.' });
+      }
+      if (users.length === 0) {
+        return res.status(404).json({ mensagem: 'Conta não encontrada.' });
+      }
+
+      let senhaCorreta;
+      try {
+        senhaCorreta = await bcrypt.compare(senha, users[0].senha_hash);
+      } catch (compareError) {
+        console.error('Erro ao validar senha para exclusão:', compareError);
+        return res.status(500).json({ mensagem: 'Não foi possível validar a senha.' });
+      }
+      if (!senhaCorreta) {
+        return res.status(401).json({ mensagem: 'A senha informada está incorreta.' });
+      }
+
+      const usuarioId = req.sessao.id_usuario;
+      const fotoPerfil = users[0].foto_perfil;
+      let conexao;
+      try {
+        const senhaInutilizavel = await bcrypt.hash(crypto.randomBytes(32).toString('hex'), 10);
+        conexao = await new Promise((resolve, reject) => {
+          transactionPool.getConnection((err, connection) => (err ? reject(err) : resolve(connection)));
+        });
+        await new Promise((resolve, reject) => {
+          conexao.beginTransaction((err) => (err ? reject(err) : resolve()));
+        });
+
+        const consulta = (sql, parametros) => new Promise((resolve, reject) => {
+          conexao.query(sql, parametros, (err, result) => (err ? reject(err) : resolve(result)));
+        });
+
+        await consulta(
+          `UPDATE anuncio
+           SET status = 'removido', anuncio_titulo = 'Anúncio de conta excluída',
+             descricao = NULL, id_endereco = NULL
+           WHERE id_usuario = ?`,
+          [usuarioId]
+        );
+        await consulta(
+          `UPDATE anuncio a
+           JOIN endereco e ON e.id_endereco = a.id_endereco
+           SET a.id_endereco = NULL
+           WHERE e.id_usuario = ?`,
+          [usuarioId]
+        );
+        await consulta(
+          `DELETE img FROM imagens_anuncio img
+           JOIN anuncio a ON a.id_anuncio = img.id_anuncio
+           WHERE a.id_usuario = ?`,
+          [usuarioId]
+        );
+        await consulta(
+          `UPDATE mensagem
+           SET conteudo = 'Mensagem removida por exclusão da conta', url_imagem = NULL
+           WHERE id_remetente = ? OR id_destinatario = ?`,
+          [usuarioId, usuarioId]
+        );
+        await consulta(
+          `UPDATE avaliacao SET comentario = NULL WHERE id_avaliador = ?`,
+          [usuarioId]
+        );
+        await consulta('DELETE FROM notificacao WHERE id_usuario = ?', [usuarioId]);
+        await consulta('DELETE FROM codigo_recuperacao WHERE id_usuario = ?', [usuarioId]);
+        await consulta('DELETE FROM preferencia_notificacao WHERE id_usuario = ?', [usuarioId]);
+        await consulta('DELETE FROM dispositivo_notificacao WHERE id_usuario = ?', [usuarioId]);
+        await consulta('DELETE FROM endereco WHERE id_usuario = ?', [usuarioId]);
+        await consulta(
+          `UPDATE usuario
+           SET usuario_nome = 'Conta excluída',
+             email = ?,
+             senha_hash = ?,
+             cpf_cnpj = NULL,
+             foto_perfil = NULL
+           WHERE id_usuario = ?`,
+          [`conta-excluida-${usuarioId}@revira.invalid`, senhaInutilizavel, usuarioId]
+        );
+        await consulta(
+          'DELETE FROM sessao_usuario WHERE id_usuario = ?',
+          [usuarioId]
+        );
+
+        await new Promise((resolve, reject) => {
+          conexao.commit((err) => (err ? reject(err) : resolve()));
+        });
+        conexao.release();
+        conexao = null;
+
+        if (fotoPerfil && fotoPerfil.startsWith(PROFILE_IMAGE_URL_PREFIX)) {
+          const fotoPath = path.join(PROFILE_IMAGE_DIRECTORY, path.basename(fotoPerfil));
+          fs.unlink(fotoPath).catch((unlinkError) => {
+            if (unlinkError.code !== 'ENOENT') {
+              console.error('Não foi possível remover foto após exclusão da conta:', unlinkError);
+            }
+          });
+        }
+        return res.json({
+          mensagem: 'Conta apagada. Os dados pessoais foram anonimizados e as sessões encerradas.',
+        });
+      } catch (deleteError) {
+        if (conexao) {
+          await new Promise((resolve) => conexao.rollback(() => resolve()));
+          conexao.release();
+        }
+        console.error('Erro ao anonimizar conta:', deleteError);
+        return res.status(500).json({ mensagem: 'Não foi possível apagar a conta. Nenhum dado foi alterado.' });
+      }
+    }
+  );
 });
 
 app.post('/usuario/cadastro', async (req, res) => {
@@ -484,10 +1046,13 @@ app.delete('/endereco/:id', (req, res) => {
 
 // --- ROTAS DE MENSAGENS (CHAT) ---
 
-app.get('/mensagens', (req, res) => {
-  const query = 'SELECT id_mensagem, id_remetente, id_destinatario, conteudo, lida, enviado_em, url_imagem FROM mensagem ORDER BY enviado_em ASC';
+app.get('/mensagens', autenticarSessao, (req, res) => {
+  const query = `SELECT id_mensagem, id_remetente, id_destinatario, conteudo, lida, enviado_em, url_imagem
+    FROM mensagem
+    WHERE id_remetente = ? OR id_destinatario = ?
+    ORDER BY enviado_em ASC`;
   
-  db.query(query, (err, results) => {
+  db.query(query, [req.sessao.id_usuario, req.sessao.id_usuario], (err, results) => {
     if (err) {
       console.error('Erro ao buscar mensagens:', err);
       return res.status(500).json({ error: err.message });
@@ -496,8 +1061,12 @@ app.get('/mensagens', (req, res) => {
   });
 });
 
-app.post('/mensagens', (req, res) => {
-  const { conteudo, id_remetente, id_destinatario, url_imagem } = req.body;
+app.post('/mensagens', autenticarSessao, (req, res) => {
+  const { conteudo, id_destinatario, url_imagem } = req.body;
+  const id_remetente = req.sessao.id_usuario;
+  if (!Number.isInteger(Number(id_destinatario)) || Number(id_destinatario) < 1) {
+    return res.status(400).json({ mensagem: 'Destinatário inválido.' });
+  }
 
   const query = 'INSERT INTO mensagem (conteudo, id_remetente, id_destinatario, url_imagem) VALUES (?, ?, ?, ?)';
   
@@ -506,6 +1075,23 @@ app.post('/mensagens', (req, res) => {
       console.error('Erro ao salvar mensagem:', err);
       return res.status(500).json({ mensagem: 'Erro interno ao salvar mensagem.' });
     }
+    db.query(
+      'SELECT usuario_nome FROM usuario WHERE id_usuario = ?',
+      [id_remetente],
+      (senderError, senders) => {
+        if (senderError) {
+          console.error('Erro ao buscar remetente para notificação de mensagem:', senderError);
+          return;
+        }
+        const senderName = senders[0]?.usuario_nome || 'Alguém';
+        enviarPushParaUsuario(
+          Number(id_destinatario),
+          'messages',
+          `Nova mensagem de ${senderName}`,
+          'Abra o Revira para ver sua mensagem.'
+        );
+      }
+    );
     res.status(201).json({ mensagem: 'Mensagem salva com sucesso', id: results.insertId });
   });
 });
@@ -783,21 +1369,59 @@ app.post('/usuario/redefinir_senha', async (req, res) => {
     try {
       const saltRounds = 10;
       const senhaHash = await bcrypt.hash(novaSenha, saltRounds);
- 
-      const updateQuery = 'UPDATE usuario SET senha_hash = ? WHERE id_usuario = ?';
-      db.query(updateQuery, [senhaHash, registro.id_usuario], (err) => {
-        if (err) {
-          console.error('Erro ao atualizar senha:', err);
-          return res.status(500).json({ mensagem: 'Erro interno ao atualizar senha.' });
-        }
- 
-        const marcaUsado = 'UPDATE codigo_recuperacao SET usado = 1 WHERE id_codigo = ?';
-        db.query(marcaUsado, [registro.id_codigo], (err) => {
-          if (err) console.error('Erro ao marcar código como usado:', err);
+      let conexao;
+      try {
+        conexao = await new Promise((resolve, reject) => {
+          transactionPool.getConnection((connectionError, connection) =>
+            connectionError ? reject(connectionError) : resolve(connection)
+          );
         });
- 
-        return res.status(200).json({ mensagem: 'Senha redefinida com sucesso!' });
-      });
+        await new Promise((resolve, reject) => {
+          conexao.beginTransaction((transactionError) =>
+            transactionError ? reject(transactionError) : resolve()
+          );
+        });
+
+        const executar = (sql, parametros) => new Promise((resolve, reject) => {
+          conexao.query(sql, parametros, (queryError, result) =>
+            queryError ? reject(queryError) : resolve(result)
+          );
+        });
+        const codigoAtualizado = await executar(
+          `UPDATE codigo_recuperacao SET usado = 1
+           WHERE id_codigo = ? AND usado = 0 AND expira_em > NOW()`,
+          [registro.id_codigo]
+        );
+        if (codigoAtualizado.affectedRows === 0) {
+          await new Promise((resolve) => conexao.rollback(() => resolve()));
+          conexao.release();
+          return res.status(400).json({ mensagem: 'Este código já foi utilizado ou expirou.' });
+        }
+
+        await executar('UPDATE usuario SET senha_hash = ? WHERE id_usuario = ?', [
+          senhaHash,
+          registro.id_usuario,
+        ]);
+        await executar(
+          'UPDATE sessao_usuario SET revogado_em = NOW() WHERE id_usuario = ? AND revogado_em IS NULL',
+          [registro.id_usuario]
+        );
+        await executar(
+          'UPDATE dispositivo_notificacao SET ativo = 0 WHERE id_usuario = ?',
+          [registro.id_usuario]
+        );
+        await new Promise((resolve, reject) => {
+          conexao.commit((commitError) => (commitError ? reject(commitError) : resolve()));
+        });
+        conexao.release();
+        return res.status(200).json({ mensagem: 'Senha redefinida e sessões encerradas com sucesso.' });
+      } catch (resetError) {
+        if (conexao) {
+          await new Promise((resolve) => conexao.rollback(() => resolve()));
+          conexao.release();
+        }
+        throw resetError;
+      }
     } catch (hashError) {
       console.error('Erro ao gerar hash da senha:', hashError);
       return res.status(500).json({ mensagem: 'Erro interno no servidor.' });
@@ -805,6 +1429,7 @@ app.post('/usuario/redefinir_senha', async (req, res) => {
   });
 });
 
-app.listen(3000, '0.0.0.0', () => {
-  console.log('Servidor rodando na porta 3000');
+const PORT = Number(process.env.PORT) || 3000;
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`Servidor rodando na porta ${PORT}`);
 });

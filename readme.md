@@ -275,7 +275,7 @@ revira_app_ps/
 2. Acesse o *phpMyAdmin* no seu navegador (`http://localhost/phpmyadmin`).
 3. Crie um novo banco de dados chamado `marketplace`.
 4. Importe o arquivo `marketplace.sql` localizado na pasta `backend/banco/`.
-5. Sempre que atualizar o esquema, importe o arquivo principal `backend/banco/marketplace.sql`. A importacao pode substituir os dados existentes; exporte um backup antes se precisar preserva-los.
+5. Sempre que atualizar o esquema, importe o arquivo principal `backend/banco/marketplace.sql`.
 
 ### 2. Inicializar o Backend (Node.js)
 
@@ -317,6 +317,5 @@ Após o comando iniciar:
 
 ## Observacoes Importantes
 
-1. **Configuracao da API (api.ts):** A Web usa `http://localhost:3000`. Cada integrante que testar em celular fisico deve atualizar `LOCAL_IP` em `meu-primeiro-app/src/config/api.ts` para o IP local do proprio computador, mantendo o celular e o computador na mesma rede Wi-Fi.
-2. **Fotos de perfil:** O app reduz as fotos para 512 x 512 pixels antes do envio. A API aceita arquivos JPEG de ate 5 MB e salva as imagens em `backend/uploads/profile/`; o banco guarda apenas o caminho. Essa pasta e ignorada pelo Git e deve ser mantida no mesmo servidor do backend.
-3. **Versionamento:** Nao envie as pastas `node_modules` nem os arquivos de fotos em `backend/uploads/`. Os arquivos `package-lock.json` e os scripts SQL devem ser versionados. Execute `npm ci` nas pastas `backend` e `meu-primeiro-app` ao preparar o ambiente.
+1. **Configuracao da API (api.ts):** A Web usa `http://localhost:3000`.
+2. **Versionamento:** Nao enviar as pastas `node_modules` nem os arquivos de fotos em `backend/uploads/`. Os arquivos `package-lock.json` e os scripts SQL devem ser versionados. Executar `npm ci` nas pastas `backend` e `meu-primeiro-app` ao preparar o ambiente.
