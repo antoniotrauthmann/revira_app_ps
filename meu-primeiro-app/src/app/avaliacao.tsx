@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -12,21 +12,79 @@ import {
   SafeAreaView
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router';
+import { useRouter, useLocalSearchParams } from 'expo-router';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { API_BASE_URL } from '../config/api';
 
 export default function AvaliacaoScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{ id_transacao?: string; id_avaliado?: string; nome?: string }>();
+
   const [nota, setNota] = useState(0);
   const [comentario, setComentario] = useState('');
   const [loading, setLoading] = useState(false);
+  const [idAvaliador, setIdAvaliador] = useState<number | null>(null);
+  const [nomeAvaliado, setNomeAvaliado] = useState(params.nome || '');
 
-  // Nome fictício do vendedor/comprador para a interface
-  const nomeUsuarioAvaliado = "João (Catador)"; 
+  const idTransacao = Number(params.id_transacao);
+  const idAvaliado = Number(params.id_avaliado);
+
+  const avisar = (titulo: string, msg: string, onOk?: () => void) => {
+    if (Platform.OS === 'web') {
+      window.alert(`${titulo}\n${msg}`);
+      onOk?.();
+    } else {
+      Alert.alert(titulo, msg, [{ text: 'OK', onPress: onOk }]);
+    }
+  };
+
+  const voltar = () => {
+    if (router.canGoBack()) router.back();
+    else router.push('/transacoes');
+  };
+
+  // Usuário logado
+  useEffect(() => {
+    const carregarUsuario = async () => {
+      try {
+        const dadosSalvos = await AsyncStorage.getItem('@usuario_logado');
+        if (!dadosSalvos) {
+          router.replace('/');
+          return;
+        }
+        const usuario = JSON.parse(dadosSalvos) as { id_usuario?: number };
+        setIdAvaliador(usuario.id_usuario || null);
+      } catch (error) {
+        console.error('Erro ao identificar usuário para avaliação:', error);
+      }
+    };
+    carregarUsuario();
+  }, [router]);
+
+  // Buscar nome de quem está sendo avaliado se não vier nos parâmetros
+  useEffect(() => {
+    if (!idAvaliado || params.nome) return;
+    const carregarNome = async () => {
+      try {
+        const r = await fetch(`${API_BASE_URL}/usuario/${idAvaliado}`);
+        if (r.ok) {
+          const u = await r.json();
+          setNomeAvaliado(u.usuario_nome);
+        }
+      } catch (e) {
+        console.error('Erro ao carregar usuário avaliado:', e);
+      }
+    };
+    carregarNome();
+  }, [idAvaliado, params.nome]);
 
   const handleAvaliar = async () => {
     if (nota === 0) {
-      Alert.alert('Atenção', 'Por favor, selecione uma nota de 1 a 5 estrelas.');
+      avisar('Atenção', 'Por favor, selecione uma nota de 1 a 5 estrelas.');
+      return;
+    }
+    if (!idAvaliador || !Number.isInteger(idTransacao) || !Number.isInteger(idAvaliado) || idTransacao <= 0 || idAvaliado <= 0) {
+      avisar('Erro', 'Esta transação não está disponível para avaliação ou os dados são inválidos.');
       return;
     }
 
@@ -35,37 +93,38 @@ export default function AvaliacaoScreen() {
     try {
       const response = await fetch(`${API_BASE_URL}/avaliacoes`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          id_transacao: 1, 
-          id_avaliador: 1, 
-          id_avaliado: 1,  
+          id_transacao: idTransacao,
+          id_avaliador: idAvaliador,
+          id_avaliado: idAvaliado,
           nota: nota,
-          comentario: comentario,
+          comentario: comentario.trim(),
         }),
       });
 
+      const resp = await response.json();
+
       if (response.ok) {
+        const voltarParaAvaliacoes = () => router.replace('/minhas_avaliacoes');
         if (Platform.OS === 'web') {
-          window.alert('Sucesso! A sua avaliação foi enviada com sucesso.');
-          router.push('/anuncio_listagem');
+          window.alert('Sucesso!\nA sua avaliação foi enviada com sucesso.');
+          voltarParaAvaliacoes();
         } else {
           Alert.alert('Sucesso!', 'A sua avaliação foi enviada com sucesso.', [
             { 
               text: 'OK', 
-              onPress: () => router.push('/anuncio_listagem')
+              onPress: voltarParaAvaliacoes
             }
           ]);
         }
       } else {
-        const errorData = await response.json();
-        throw new Error(errorData.mensagem || 'Falha ao enviar avaliação');
+        throw new Error(resp.mensagem || 'Falha ao enviar avaliação.');
       }
     } catch (error) {
       console.error(error);
-      Alert.alert('Erro', 'Não foi possível enviar a avaliação. Tente novamente.');
+      const mensagem = error instanceof Error ? error.message : 'Não foi possível enviar a avaliação.';
+      avisar('Erro', mensagem);
     } finally {
       setLoading(false);
     }
@@ -94,16 +153,7 @@ export default function AvaliacaoScreen() {
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         style={styles.container}
       >
-          <TouchableOpacity 
-            style={styles.backButton} 
-            onPress={() => {
-              if (router.canGoBack()) {
-                router.back();
-              } else {
-                router.push('/anuncio_listagem');
-              }
-            }}
-          >
+        <TouchableOpacity style={styles.backButton} onPress={voltar}>
           <MaterialCommunityIcons name="arrow-left" size={24} color="#1B5E20" />
         </TouchableOpacity>
 
@@ -113,7 +163,9 @@ export default function AvaliacaoScreen() {
               <MaterialCommunityIcons name="account-star" size={50} color="#2E7D32" />
             </View>
             <Text style={styles.title}>Avaliar Transação</Text>
-            <Text style={styles.subtitle}>Como foi sua experiência com {nomeUsuarioAvaliado}?</Text>
+            <Text style={styles.subtitle}>
+              Como foi sua experiência com {nomeAvaliado || 'esta pessoa'}?
+            </Text>
           </View>
 
           {renderStars()}
@@ -135,10 +187,10 @@ export default function AvaliacaoScreen() {
             />
           </View>
 
-          <TouchableOpacity 
-            style={[styles.button, nota === 0 && styles.buttonDisabled]} 
+          <TouchableOpacity
+            style={[styles.button, (nota === 0 || loading) && styles.buttonDisabled]}
             onPress={handleAvaliar}
-            disabled={loading || nota === 0}
+            disabled={loading || nota === 0 || !idAvaliador}
           >
             {loading ? (
               <ActivityIndicator color="#FFF" />

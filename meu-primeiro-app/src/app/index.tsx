@@ -14,7 +14,9 @@ import {
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { useRouter } from 'expo-router'; // 👈 Import da navegação do Expo Router
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import * as Device from 'expo-device';
 import { API_BASE_URL } from '../config/api';
+import { saveSessionToken } from '../config/session';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
@@ -25,7 +27,33 @@ export default function LoginScreen() {
 
   const API_URL = `${API_BASE_URL}/usuario/login`;
 
-const handleLogin = async () => {
+  const getNomeDispositivo = () => {
+    if (Platform.OS === 'web' && typeof navigator !== 'undefined') {
+      const agente = navigator.userAgent;
+      const navegador = agente.includes('Edg/')
+        ? 'Edge'
+        : agente.includes('Firefox/')
+          ? 'Firefox'
+          : agente.includes('Chrome/')
+            ? 'Chrome'
+            : agente.includes('Safari/')
+              ? 'Safari'
+              : 'Navegador';
+      const sistema = agente.includes('Windows')
+        ? 'Windows'
+        : agente.includes('Mac OS')
+          ? 'macOS'
+          : agente.includes('Android')
+            ? 'Android'
+            : agente.includes('iPhone') || agente.includes('iPad')
+              ? 'iOS'
+              : 'Computador';
+      return `${navegador} em ${sistema}`;
+    }
+    return `${Device.osName || Platform.OS}${Device.modelName ? ` · ${Device.modelName}` : ''}`;
+  };
+
+  const handleLogin = async () => {
   console.log('Iniciando tentativa de login...');
 
   if (!email.trim() || !senha.trim()) {
@@ -46,6 +74,7 @@ const handleLogin = async () => {
       body: JSON.stringify({
         email: email.trim(),
         senha: senha.trim(),
+        dispositivo: getNomeDispositivo(),
       }),
     });
 
@@ -60,11 +89,13 @@ const handleLogin = async () => {
       throw new Error('O servidor devolveu uma resposta num formato inválido.');
     }
 
-    console.log('Resposta do servidor:', data);
-
     if (response.ok) {
       const usuarioNome = data.usuario?.usuario_nome || 'Usuário';
 
+      if (!data.sessao?.token) {
+        throw new Error('O servidor não iniciou uma sessão válida.');
+      }
+      await saveSessionToken(data.sessao.token);
       await AsyncStorage.setItem('@usuario_logado', JSON.stringify(data.usuario));
 
       if (Platform.OS === 'web') {

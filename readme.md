@@ -275,6 +275,7 @@ revira_app_ps/
 2. Acesse o *phpMyAdmin* no seu navegador (`http://localhost/phpmyadmin`).
 3. Crie um novo banco de dados chamado `marketplace`.
 4. Importe o arquivo `marketplace.sql` localizado na pasta `backend/banco/`.
+5. Sempre que atualizar o esquema, importe o arquivo principal `backend/banco/marketplace.sql`.
 
 ### 2. Inicializar o Backend (Node.js)
 
@@ -284,8 +285,8 @@ Em um terminal, acesse a pasta do backend e inicie o servidor:
 # Entrar na pasta do backend
 cd backend
 
-# Instalar as dependencias (caso ainda nao tenha instalado)
-npm install
+# Instalar as dependencias do lockfile
+npm ci
 
 # Iniciar o servidor
 node server.js
@@ -301,8 +302,8 @@ Em um **segundo terminal**, acesse a pasta do aplicativo e inicie o Expo:
 # Entrar na pasta do app
 cd meu-primeiro-app
 
-# Instalar as dependencias (caso ainda nao tenha instalado)
-npm install
+# Instalar as dependencias do lockfile
+npm ci
 
 # Iniciar o servidor de desenvolvimento do Expo
 npx expo start
@@ -316,5 +317,5 @@ Após o comando iniciar:
 
 ## Observacoes Importantes
 
-1. **Configuracao da API (api.ts):** O arquivo `src/config/api.ts` detecta automaticamente se o app esta rodando na Web (`http://localhost:3000`) ou em um dispositivo fisico na rede Wi-Fi local.
-2. **Versionamento:** Nao envie as pastas `node_modules` para o controle de versao Git. Sempre execute `npm install` ao clonar ou atualizar o repositorio.
+1. **Configuracao da API (api.ts):** A Web usa `http://localhost:3000`.
+2. **Versionamento:** Nao enviar as pastas `node_modules` nem os arquivos de fotos em `backend/uploads/`. Os arquivos `package-lock.json` e os scripts SQL devem ser versionados. Executar `npm ci` nas pastas `backend` e `meu-primeiro-app` ao preparar o ambiente.
