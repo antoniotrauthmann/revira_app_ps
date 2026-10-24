@@ -208,6 +208,7 @@ Também poderão existir anúncios patrocinados e planos específicos para forne
 * [📋 Requisitos Funcionais](documents/Requisitos-Funcionais.md)
 * [📋 Requisitos Não Funcionais](documents/Requisitos-Não-Funcionais.md)
 * [📋 casos de Uso](documents/Casos-de-Usos.md)
+* [📌 Trello do Projeto](https://trello.com/b/qKG06hH6/projetos-de-sistemas)
 
 ---
 
