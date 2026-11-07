@@ -176,9 +176,25 @@ export default function CadastrarAnuncioScreen() {
       const data = await response.json();
 
       if (response.ok) {
-        Alert.alert('Sucesso!', 'Seu anúncio foi publicado com sucesso.', [
-          { text: 'OK', onPress: () => router.push('/anuncio_listagem') }, // Rota corrigida
-        ]);
+        if (Platform.OS === 'web') {
+          const irParaListagem = window.confirm(
+            'Anúncio publicado com sucesso!\n\nClique em [OK] para "Ver meus anúncios" ou [Cancelar] para "Voltar ao Início".'
+          );
+          if (irParaListagem) {
+            router.push('/anuncio_listagem' as any);
+          } else {
+            router.push('/home' as any);
+          }
+        } else {
+          Alert.alert(
+            'Sucesso!', 
+            'Seu anúncio foi publicado com sucesso. O que deseja fazer agora?', 
+            [
+              { text: 'Voltar ao Início', onPress: () => router.push('/home' as any), style: 'cancel' },
+              { text: 'Ver meus anúncios', onPress: () => router.push('/anuncio_listagem' as any) },
+            ]
+          );
+        }
       } else {
         Alert.alert('Erro', data.mensagem || 'Ocorreu um erro ao cadastrar o anúncio.');
       }
