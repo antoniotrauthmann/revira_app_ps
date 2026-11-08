@@ -95,6 +95,10 @@ export default function HomeScreen() {
             <MaterialCommunityIcons name="plus-box" size={40} color="#2E7D32" />
             <Text style={styles.cardTitle}>Criar Anúncio</Text>
           </TouchableOpacity>
+          <TouchableOpacity style={styles.card} activeOpacity={0.7} onPress={() => router.push('/ecopontos')}>
+            <MaterialCommunityIcons name="map-marker-radius" size={40} color="#2E7D32" />
+            <Text style={styles.cardTitle}>Ecopontos</Text>
+          </TouchableOpacity>
         </View>
  
         {/* Categorias de reciclagem */}

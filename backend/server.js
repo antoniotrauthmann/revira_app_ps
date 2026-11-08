@@ -7,6 +7,7 @@ const fs = require('fs/promises');
 const path = require('path');
 const bcrypt = require('bcrypt');
 const { enviarCodigoRecuperacao, enviarCupomRecompensa } = require('./email');
+const { criarRotasEcopontos } = require('./ecopontos');
 
 const app = express();
 app.use(cors());
@@ -22,7 +23,7 @@ app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 const databaseConfig = {
   host: 'localhost',
   user: 'root',      
-  port: 3307,
+  port: 3306,
   password: '',      
   database: 'marketplace'
 };
@@ -2001,6 +2002,9 @@ app.post('/recompensas/resgatar', (req, res) => {
     });
   });
 });
+
+// Mapa interativo de ecopontos (rotas isoladas em ecopontos.js)
+app.use('/ecopontos', criarRotasEcopontos(db, { autenticarSessao }));
 
 const PORT = Number(process.env.PORT) || 3000;
 app.listen(PORT, '0.0.0.0', () => {
