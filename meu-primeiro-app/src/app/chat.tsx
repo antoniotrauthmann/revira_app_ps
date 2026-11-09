@@ -37,6 +37,8 @@ interface AnuncioInfo {
   material_nome: string;
   quantidade: number;
   status: string;
+  vendedor_nome?: string;
+  vendedor_email?: string;
 }
 
 export default function ChatScreen() {
@@ -340,12 +342,24 @@ export default function ChatScreen() {
   return (
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.adHeader}>
+        {/* NOVO: Botão de voltar */}
+        <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+          <MaterialCommunityIcons name="arrow-left" size={24} color="#1B5E20" />
+        </TouchableOpacity>
+
         <View style={{ flex: 1 }}>
           <Text style={styles.adTitle} numberOfLines={1}>{anuncio?.anuncio_titulo || 'Carregando...'}</Text>
           {anuncio && (
-            <Text style={styles.adPrice}>
-              R$ {Number(anuncio.preco).toFixed(2).replace('.', ',')} · {Number(anuncio.quantidade)} {anuncio.unidade_medida} disponíveis
-            </Text>
+            <>
+              {/* NOVO: Contato do vendedor */}
+              <Text style={styles.adSellerContact} numberOfLines={1}>
+                👤 {anuncio.vendedor_nome || 'Vendedor'} {anuncio.vendedor_email ? `· ${anuncio.vendedor_email}` : ''}
+              </Text>
+              
+              <Text style={styles.adPrice}>
+                R$ {Number(anuncio.preco).toFixed(2).replace('.', ',')} · {Number(anuncio.quantidade)} {anuncio.unidade_medida} disponíveis
+              </Text>
+            </>
           )}
         </View>
         <TouchableOpacity
@@ -476,7 +490,9 @@ const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: '#F4F9F4' },
   container: { flex: 1 },
   adHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', padding: 16, backgroundColor: '#FFF', borderBottomWidth: 1, borderColor: '#E0E8E1', elevation: 2, gap: 12 },
+  backButton: { padding: 6, marginRight: 8, borderRadius: 8, backgroundColor: '#E8F5E9', justifyContent: 'center' },
   adTitle: { fontSize: 16, fontWeight: 'bold', color: '#1B5E20' },
+  adSellerContact: { fontSize: 12, color: '#2E7D32', marginTop: 2, fontWeight: '600' },
   adPrice: { fontSize: 13, color: '#558B2F', marginTop: 2 },
   adButton: { backgroundColor: '#E8F5E9', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8 },
   adButtonText: { color: '#2E7D32', fontWeight: 'bold', fontSize: 12 },
