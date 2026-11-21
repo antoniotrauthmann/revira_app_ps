@@ -12,18 +12,21 @@ import {
   ScrollView,
 } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
-import { useRouter } from 'expo-router'; // 👈 Import da navegação do Expo Router
+import { useRouter } from 'expo-router';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Device from 'expo-device';
 import { API_BASE_URL } from '../config/api';
 import { saveSessionToken } from '../config/session';
+import { colors } from '../theme';
 
 export default function LoginScreen() {
   const [email, setEmail] = useState('');
   const [senha, setSenha] = useState('');
   const [loading, setLoading] = useState(false);
+  const [campoAtivo, setCampoAtivo] = useState<'email' | 'senha' | null>(null);
+  const [mostrarSenha, setMostrarSenha] = useState(false);
 
-  const router = useRouter(); // 👈 Hook para controlar a navegação
+  const router = useRouter();
 
   const API_URL = `${API_BASE_URL}/usuario/login`;
 
@@ -78,7 +81,7 @@ export default function LoginScreen() {
       }),
     });
 
-    // Obtém o texto bruto da resposta para validação
+   
     const textResponse = await response.text();
     let data;
 
@@ -134,26 +137,33 @@ export default function LoginScreen() {
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
       <ScrollView contentContainerStyle={styles.scrollContainer} keyboardShouldPersistTaps="handled">
-        {/* Logo / Cabeçalho */}
-        <View style={styles.header}>
-          <View style={styles.iconCircle}>
-            <MaterialCommunityIcons name="recycle" size={60} color="#2E7D32" />
+        {/* Painel de marca */}
+        <View style={styles.brand}>
+          <View style={styles.brandRing} />
+          <View style={styles.logoMark}>
+            <MaterialCommunityIcons name="recycle" size={30} color={colors.signal} />
           </View>
-          <Text style={styles.title}>ReviraApp</Text>
-          <Text style={styles.subtitle}>Transforme o futuro reciclando hoje</Text>
+          <Text style={styles.title}>Revira</Text>
+          <Text style={styles.subtitle}>
+            Compre e venda materiais recicláveis com quem está perto de você.
+          </Text>
         </View>
 
         {/* Formulário */}
-        <View style={styles.form}>
+        <View style={styles.sheet}>
+          <Text style={styles.sheetTitle}>Entrar na sua conta</Text>
+
           <Text style={styles.label}>E-mail</Text>
-          <View style={styles.inputContainer}>
-            <MaterialCommunityIcons name="email-outline" size={20} color="#666" style={styles.inputIcon} />
+          <View style={[styles.inputContainer, campoAtivo === 'email' && styles.inputFocused]}>
+            <MaterialCommunityIcons name="email-outline" size={20} color={colors.muted} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
-              placeholder="Digite seu e-mail"
-              placeholderTextColor="#999"
+              placeholder="voce@email.com"
+              placeholderTextColor="#8FA89A"
               value={email}
               onChangeText={setEmail}
+              onFocus={() => setCampoAtivo('email')}
+              onBlur={() => setCampoAtivo(null)}
               keyboardType="email-address"
               autoCapitalize="none"
               autoCorrect={false}
@@ -161,41 +171,53 @@ export default function LoginScreen() {
           </View>
 
           <Text style={styles.label}>Senha</Text>
-          <View style={styles.inputContainer}>
-            <MaterialCommunityIcons name="lock-outline" size={20} color="#666" style={styles.inputIcon} />
+          <View style={[styles.inputContainer, campoAtivo === 'senha' && styles.inputFocused]}>
+            <MaterialCommunityIcons name="lock-outline" size={20} color={colors.muted} style={styles.inputIcon} />
             <TextInput
               style={styles.input}
-              placeholder="Digite sua senha"
-              placeholderTextColor="#999"
+              placeholder="Sua senha"
+              placeholderTextColor="#8FA89A"
               value={senha}
               onChangeText={setSenha}
-              secureTextEntry
+              onFocus={() => setCampoAtivo('senha')}
+              onBlur={() => setCampoAtivo(null)}
+              secureTextEntry={!mostrarSenha}
               autoCapitalize="none"
             />
+            <TouchableOpacity
+              onPress={() => setMostrarSenha((v) => !v)}
+              accessibilityRole="button"
+              accessibilityLabel={mostrarSenha ? 'Ocultar senha' : 'Mostrar senha'}
+              hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            >
+              <MaterialCommunityIcons
+                name={mostrarSenha ? 'eye-off-outline' : 'eye-outline'}
+                size={20}
+                color={colors.muted}
+              />
+            </TouchableOpacity>
           </View>
 
-          <TouchableOpacity 
-              style={styles.forgotPasswordButton}
-              onPress={() => router.push('/esqueci_senha')}
->
+          <TouchableOpacity
+            style={styles.forgotPasswordButton}
+            onPress={() => router.push('/esqueci_senha')}
+          >
             <Text style={styles.forgotPasswordText}>Esqueceu a senha?</Text>
           </TouchableOpacity>
 
-          {/* Botão Entrar */}
           <TouchableOpacity
-            style={styles.button}
+            style={[styles.button, loading && styles.buttonDisabled]}
             onPress={handleLogin}
             disabled={loading}
-            activeOpacity={0.8}
+            activeOpacity={0.85}
           >
             {loading ? (
-              <ActivityIndicator color="#FFF" />
+              <ActivityIndicator color={colors.signal} />
             ) : (
               <Text style={styles.buttonText}>Entrar</Text>
             )}
           </TouchableOpacity>
 
-          {/* Rodapé / Cadastre-se */}
           <View style={styles.registerContainer}>
             <Text style={styles.registerText}>Ainda não tem uma conta? </Text>
             <TouchableOpacity onPress={() => router.push('/cadastro')}>
@@ -209,110 +231,43 @@ export default function LoginScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: '#F4F9F4',
+  container: { flex: 1, backgroundColor: colors.forest },
+  scrollContainer: { flexGrow: 1 },
+
+  brand: { paddingHorizontal: 28, paddingTop: 72, paddingBottom: 56, overflow: 'hidden' },
+  brandRing: {
+    position: 'absolute', right: -80, top: -60, width: 260, height: 260, borderRadius: 130,
+    borderWidth: 1, borderColor: 'rgba(184,230,92,0.30)', backgroundColor: 'rgba(184,230,92,0.05)',
   },
-  scrollContainer: {
-    flexGrow: 1,
-    justifyContent: 'center',
-    padding: 24,
+  logoMark: {
+    width: 56, height: 56, borderRadius: 18, backgroundColor: 'rgba(184,230,92,0.14)',
+    alignItems: 'center', justifyContent: 'center', marginBottom: 20,
   },
-  header: {
-    alignItems: 'center',
-    marginBottom: 32,
+  title: { fontSize: 36, fontWeight: '700', color: '#EAF5EE', letterSpacing: -1 },
+  subtitle: { fontSize: 15, color: '#B7D2C2', marginTop: 8, lineHeight: 22, maxWidth: 300 },
+
+  sheet: {
+    flex: 1, backgroundColor: colors.bg, borderTopLeftRadius: 28, borderTopRightRadius: 28,
+    padding: 24, paddingTop: 28,
   },
-  iconCircle: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: '#E8F5E9',
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: 16,
-    elevation: 3,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 4,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-    color: '#1B5E20',
-  },
-  subtitle: {
-    fontSize: 14,
-    color: '#4CAF50',
-    marginTop: 4,
-  },
-  form: {
-    width: '100%',
-  },
-  label: {
-    fontSize: 14,
-    fontWeight: '600',
-    color: '#333',
-    marginBottom: 6,
-    marginTop: 12,
-  },
+  sheetTitle: { fontSize: 22, fontWeight: '700', color: colors.ink, letterSpacing: -0.4, marginBottom: 6 },
+  label: { fontSize: 14, fontWeight: '600', color: colors.ink, marginBottom: 6, marginTop: 14 },
   inputContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FFF',
-    borderWidth: 1,
-    borderColor: '#C8E6C9',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    height: 50,
+    flexDirection: 'row', alignItems: 'center', backgroundColor: colors.surface,
+    borderWidth: 1, borderColor: colors.line, borderRadius: 14, paddingHorizontal: 14, height: 52,
   },
-  inputIcon: {
-    marginRight: 8,
-  },
-  input: {
-    flex: 1,
-    fontSize: 16,
-    color: '#333',
-  },
-  forgotPasswordButton: {
-    alignSelf: 'flex-end',
-    marginTop: 8,
-    marginBottom: 20,
-  },
-  forgotPasswordText: {
-    color: '#2E7D32',
-    fontSize: 13,
-    fontWeight: '500',
-  },
+  inputFocused: { borderColor: colors.brand, borderWidth: 2 },
+  inputIcon: { marginRight: 10 },
+  input: { flex: 1, fontSize: 16, color: colors.ink },
+  forgotPasswordButton: { alignSelf: 'flex-end', marginTop: 10, marginBottom: 22 },
+  forgotPasswordText: { color: colors.brand, fontSize: 14, fontWeight: '600' },
   button: {
-    backgroundColor: '#2E7D32',
-    height: 52,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 2,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 3,
+    backgroundColor: colors.forest, height: 54, borderRadius: 999,
+    justifyContent: 'center', alignItems: 'center',
   },
-  buttonText: {
-    color: '#FFF',
-    fontSize: 18,
-    fontWeight: 'bold',
-  },
-  registerContainer: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    marginTop: 24,
-  },
-  registerText: {
-    color: '#666',
-    fontSize: 14,
-  },
-  registerBoldText: {
-    color: '#2E7D32',
-    fontWeight: 'bold',
-    fontSize: 14,
-  },
+  buttonDisabled: { opacity: 0.7 },
+  buttonText: { color: '#FFFFFF', fontSize: 17, fontWeight: '700' },
+  registerContainer: { flexDirection: 'row', justifyContent: 'center', marginTop: 26 },
+  registerText: { color: colors.muted, fontSize: 14 },
+  registerBoldText: { color: colors.brand, fontWeight: '700', fontSize: 14 },
 });
